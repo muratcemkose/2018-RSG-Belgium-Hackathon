@@ -1,0 +1,322 @@
+
+==== Front
+BioinformaticsBioinformaticsbioinformaticsbioinfoBioinformatics1367-48031367-4811Oxford University Press 2516124210.1093/bioinformatics/btu463btu463Eccb 2014 Proceedings Papers CommitteeOriginal PapersEvolution and Population GenomicsPolytomy refinement for the correction of dubious duplications in gene trees Lafond Manuel 1*Chauve Cedric 23Dondi Riccardo 4El-Mabrouk Nadia 1*1Department of Computer Science, Université de Montréal, Montréal, Quebec H3C 3J7, Canada, 2LaBRI, Université Bordeaux 1, Bordeaux, France, 3Department of Mathematics, Simon Fraser University, Burnaby (BC) V5A 1S6, Canada and 4Universitá degli Studi di Bergamo, Bergamo 24129 IT, Italy *To whom correspondence should be addressed.01 9 2014 22 8 2014 22 8 2014 30 17 i519 i526 © The Author 2014. Published by Oxford University Press.2014This is an Open Access article distributed under the terms of the Creative Commons Attribution Non-Commercial License (http://creativecommons.org/licenses/by-nc/4.0/), which permits non-commercial re-use, distribution, and reproduction in any medium, provided the original work is properly cited. For commercial re-use, please contact journals.permissions@oup.comMotivation: Large-scale methods for inferring gene trees are error-prone. Correcting gene trees for weakly supported features often results in non-binary trees, i.e. trees with polytomies, thus raising the natural question of refining such polytomies into binary trees. A feature pointing toward potential errors in gene trees are duplications that are not supported by the presence of multiple gene copies.
+
+Results: We introduce the problem of refining polytomies in a gene tree while minimizing the number of created non-apparent duplications in the resulting tree. We show that this problem can be described as a graph-theoretical optimization problem. We provide a bounded heuristic with guaranteed optimality for well-characterized instances. We apply our algorithm to a set of ray-finned fish gene trees from the Ensembl database to illustrate its ability to correct dubious duplications.
+
+Availability and implementation: The C++ source code for the algorithms and simulations described in the article are available at http://www-ens.iro.umontreal.ca/~lafonman/software.php.
+
+Contact:
+lafonman@iro.umontreal.ca or mabrouk@iro.umontreal.ca
+
+Supplementary information:
+Supplementary data are available at Bioinformatics online.
+==== Body
+1 INTRODUCTION
+With the increasing number of completely sequenced genomes, the task of identifying gene counterparts in different organisms becomes more and more important. This is usually done by clustering genes sharing significant sequence similarity, constructing gene trees and then inferring macro-evolutionary events such as duplications, losses or transfers through reconciliation with the phylogenetic tree of the considered taxa. The inference of accurate gene trees is an important step in this pipeline. While gene trees are traditionally constructed solely from sequence alignments (Guidon and Gascuel, 2003; Ronquist and Huelsenbeck, 2003; Saitou and Nei, 1987), recent methods incorporate information from species phylogenies, gene order and other genomic footprint (Akerborg et al., 2009;Boussau et al., 2013; Durand et al., 2003; Rasmussen and Kellis, 2011; Szöllosi et al., 2013; Thomas, 2010; Wapinski et al., 2007). A large number of gene tree databases are now available (Datta et al., 2009;Flicek, 2012; Huerta-Cepas et al., 2011; Mi et al., 2012; Schreiber et al., 2013).
+
+But constructing accurate gene trees is still challenging; for example, a significant number of nodes in the Ensembl gene trees are labelled as ‘dubious’ (Flicek, 2012). In a recent study, we have been able to show that ∼30% of 6241 Ensembl gene trees for the genomes of the fishes Stickleback, Medaka, Tetraodon and Zebrafish exhibit at least one gene order inconsistency and thus are likely to be erroneous (Lafond et al., 2013). Moreover, owing to various reasons such as insufficient differentiation between gene sequences and alignment ambiguities, it is often difficult to support a single gene tree topology with high confidence. Several support measures, such as bootstrap values or Bayesian posterior probabilities, have been proposed to detect weakly supported edges. Recently, intense efforts have been put towards developing tools for gene tree correction (Berglund-Sonnhammer et al., 2006; Chaudhary et al., 2011; Chen et al., 2000; Doroftei and El-Mabrouk, 2011; Gorecki and Eulenstein, 2011a,b; Nguyen et al., 2013; Swenson et al., 2012; Wu et al., 2012). A natural approach is to remove a weakly supported edge and collapse its two incident vertices into one (Beiko and Hamilton, 2006), or to remove ‘dubious’ nodes and join resulting subtrees under a single root (Lafond et al., 2013). The resulting tree is non-binary with polytomies (multifurcating nodes) representing unresolved parts of the tree. A natural question is then to select a binary refinement of each polytomy based on appropriate criteria. This has been the purpose of a few theoretical and algorithmic studies conducted in the past years, most of them based on minimizing the mutation (i.e. duplication and loss) cost of reconciliation (Chang and Eulenstein, 2006; Lafond et al., 2012; Vernot et al., 2009; Zheng et al., 2012).
+
+In the present article, we consider a different reconciliation criterion for refining a polytomy, which consists in minimizing the number of non-apparent duplication (NAD) nodes. A duplication node x of a gene tree (according to the reconciliation with a given species tree) is a NAD if the genome sets of its two subtrees are disjoint. In other words, the reason x is a duplication is not the presence of paralogs in the same genome, but rather an inconsistency with the species tree. Such nodes have been flagged as potential errors in different studies (Chauve and El-Mabrouk, 2009; Flicek, 2012; Scornavacca et al., 2009). In particular, they correspond to the nodes flagged as ‘dubious’ in Ensembl gene trees.
+
+We introduce the polytomy refinement problem in Section 2, and we show in Section 3 how it reduces to a clique decomposition problem in a graph representing speciation and duplication relationships between the leaves of a polytomy. We develop a bounded heuristic in Section 4, with guaranteed optimality in well-characterized instances. In Section 5 we exhibit a general methodology, using our polytomy refinement algorithm, for correcting NAD nodes of a gene tree. We then show in Section 6 that this approach is in agreement with the observed corrections of Ensembl gene trees from one release to another.
+
+2 THE POLYTOMY REFINEMENT PROBLEM
+Phylogenies and reconciliations. A phylogeny is a rooted tree that represents the evolutionary relationships of a set of elements (such as species, genes, … ) represented by its nodes: internal nodes are ancestors, leaves are extant elements and edges represent direct descents between parents and children. We consider two kinds of phylogenies: species trees and gene trees. A species tree S describes the evolution of a set of related species, from a common ancestor (the root of the tree), through the mechanism of speciation. For our purpose, species are identified with genomes, and genomes are simply sets of genes. As for a gene tree, it describes the evolution of a set of genes, through the evolutionary mechanisms of speciation and duplication. Therefore, each gene g, extant or ancestral, belongs to a species denoted by s(g). The set of genes in a gene tree is called a gene family. A leaf-label corresponds to a genome in a species tree, and to a gene belonging to a genome in a gene tree.
+Fig. 1. A forest F, a species tree S and the corresponding graph R. Each gene tree G of F is attached to its corresponding node s(G) in S. In R, joins of type AD are represented by green lines. All other lines are the joins of type S. Non-trivial AD-components (AD-components containing at least two nodes) are represented by green ovals. Red lines in R represent a vertex-disjoint clique W of RS. Here, RAD∪W has a single connected component, which leads to the binary refinement H of F with no NAD. After the joins of W are applied (red edges in H), the speciation-free forest can be joined with four joins AD (green vertices in H)
+
+
+
+Given a phylogeny T, we denote by l(T) the leaf-set and by V(T) the node-set of T. Given a node x of T, we denote by l(x) and call the clade of x, the leaf-set of the subtree of T rooted at x. We call an ancestor of x any node y on the path from the root of T to the parent of x. In this case we write y < x. Two nodes x, y are unrelated if none is an ancestor of the other. For a leaf subset X of T, lcaT(X), the lowest common ancestor (LCA) of X in T, denotes the farthest node from the root of T, which is an ancestor of all the elements of X. In this article, species trees are assumed to be binary: each internal node has two children, representing its direct descendants (see S in Fig. 1). For an internal node x of a binary tree, we denote by xℓ and xr the two children of x.
+Definition 1
+(Reconciliation) A reconciliation between a binary gene tree G and a species tree S consists in mapping each internal or leaf node x of G (representing respect. an ancestral or extant gene) to the species s(x) corresponding to the LCA in of the set {s(l), for all l∈l(x)}. Every internal node x of G is labelled by an event E(x) verifying: E(x)=
+Speciation (S) if s(x) is different from s(xℓ)
+and s(xr), and E(x)=
+Duplication otherwise.
+
+
+
+
+We define two types of duplication nodes of a gene tree G. A Non-Apparent-Duplication (NAD) is a duplication node x of G such that (∪x∈l(xℓ)x)∩(∪y∈l(xr)y)=∅. A duplication that is not an NAD is an apparent duplication (AD) node, i.e. a node with the left and right subtrees sharing a common leaf-label. Therefore, any internal node x of G is of type S, AD or NAD.
+
+The gene trees we consider might be non-binary. We call polytomy a gene tree with a non-binary root (see F in Fig. 1).
+Definition 2
+(Binary refinement) A tree HT is a refinement of a tree T if and only if the two trees have the same leaf-set and T can be obtained from HT by contracting some edges. When HT refines T, each node of T can be mapped to a unique node of HT so that the ancestral relationship is preserved. HT is a binary refinement of T if and only if HT is binary and is a refinement of T.
+
+
+
+
+In this article, as only binary refinements are considered, we omit the term binary from now.
+
+Problem statement. The general problem we address is the following: Given a non-binary gene tree G and a species tree S, find a refinement of G containing the minimum number of NADs with respect to S. Such a refinement of G is called a minimum refinement of G w.r.t. S.
+
+Hence, we aim at refining each non-binary node of G. We first show that each such non-binary node of G can be refined independently of the other non-binary nodes.
+Theorem 1
+Let {Gi, for 1≤i≤n}
+be the set of subtrees of G rooted at the n children {xi, for1≤i≤n}
+of the root of G. Let Hmin(Gi,S)
+be a minimum refinement of Gi w.r.t. S. Let G′
+be the tree obtained from G by replacing each Gi by Hmin(Gi,S). Then a minimum refinement of G is a minimum refinement of G′.
+
+
+
+
+It follows from Theorem 1 that a minimum refinement of G can be obtained by a depth-first procedure iteratively solving each polytomy Gx, for each internal node x of G.
+
+In the rest of this paper, we consider G as a polytomy, and we denote by F the forest {G1,G2,…Gn} obtained from G by removing the root. For simplicity, we make no difference between a tree Gi of F and its root. In particular, s(Gi) corresponds to s(root(Gi)), where root(Gi) is the root of Gi (Fig. 1). We are now ready to define the main optimization problem we consider.
+
+Minimum NAD polytomy refinement (MinNADref) problem:
+
+Input: A polytomy G and a species tree S;
+
+Output: In the set H(G) of all refinements of G, a refinement H with the minimum number of NAD nodes. Such a refinement is called a solution to the MinNADref problem.
+
+3 A GRAPH-THEORETICAL CHARACTERIZATION
+We show (Theorem 2) that the MinNADref Problem reduces to a clique decomposition problem on a graph that represents the impact, in terms of NAD creation, of joining pairs of trees from F.
+
+The join graph of a polytomy. We first define a graph R based on the notion of join. A join is an unordered pair {G1,G2} where G1,G2∈F. The join operation j on {G1,G2} consists in joining the roots of G1 and G2 under a common parent; we denote by G1,2 the resulting join tree. We call the join type of j={G1,G2}, and denote by jt(G1,G2), the reconciliation label of the node created by joining G1 and G2 (i.e. the root of G1,2), where jt(G1,G2)∈{S,AD,NAD}, respectively, for speciation, AD and NAD, w.r.t. the species tree S.
+
+We denote by R=(V,E) the join graph of F, defined as the unoriented complete graph on the set of vertices V=F, where each edge (join) is labelled by the corresponding join type (Fig. 1). We denote by RS and RAD the subgraphs of R defined by the edges of type, respectively, S and AD. We call a connected component of RAD an AD-component.
+
+Let F′ be the new forest obtained by replacing the two trees G1 and G2 of F by the join tree G1,2. The rules given below, following directly from the definition of speciation and duplication in reconciliation, are used to update the join type jt(G1,2,T) for any T∈F∖{G1,G2}.
+
+Ruleset 1
+If jt(G1,T)=AD
+or jt(G2,T)=AD, then jt(G1,2,T)=AD;
+
+Otherwise, if jt(G1,T)=NAD
+or jt(G2,T)=NAD, then jt(G1,2,T)=NAD;
+
+Otherwise, if lca(T) is not a descendant of lca(G1,2), then jt(G1,2,T)=S;
+
+Otherwise, jt(G1,2,T)=NAD.
+
+
+Clique decomposition of the join graph. Let a join sequence
+J=(J1,J2,…,J|J|) be an ordered list of joins. We denote by F(J,i) the forest obtained after applying the first i joins of J, starting with F. Note that F(J,0)=F, and that Ji∈J is a join on F(J,i−1). Let J denote the set of all possible join sequences of size |F|−1. Clearly, applying all joins of a sequence J∈J yields a single binary tree, and there exists a gene tree H∈H(G) with d NADs if and only if there exists a join sequence J∈J with d joins of type NAD. We refine this property by showing that there is a solution to the MinNADref problem where all duplication nodes are ancestral to all speciation nodes (see the tree H of Fig. 1 for an example). The proof (not shown) makes abundant use of Ruleset 1.
+Lemma 1
+There exists a binary refinement H∈H(G)
+with d NADs if and only if there exists a join sequence J∈J
+with d joins of type NAD such that, if Ji∈J
+is the first join not of type S in J, then all following joins Jj, for j > i, are of type AD or NAD.
+
+
+
+
+We define a speciation tree as a gene tree in which every internal node is a speciation node. We deduce from the previous lemma that we can obtain a solution H to the MinNADref problem by creating a forest of speciation trees first, then successively joining them with joins of type AD or NAD. As the nodes of R corresponding to the leaves of a given speciation subtree of H are pairwise joined by speciation edges, they form a clique in RS (in Fig. 1 the cliques in red are selected and the corresponding joins are applied to compute refinement H). The next theorem makes the link between the number of NADs of H and the cliques of RS. For a set W of vertex-disjoint cliques of RS, we denote by RAD∪W the graph defined by the union of the edges of RAD and W.
+Theorem 2
+A solution to the MinNADref Problem has d NADs if and only if, among all graphs RAD∪W
+where W is a set of vertex-disjoint cliques of RS, at least one has d + 1 connected components and none has less than d + 1 connected components.
+
+
+
+
+The proof of Theorem 2 is constructive. Given an optimal set W of vertex-disjoint cliques of RS, it leads to an optimal refinement H. Unfortunately, it can be shown that, given an arbitrary graph with two edge colours AD and S, finding if there exists a set W yielding a given number of connected components is an NP-hard problem (proof not shown). However, R is constrained by the structure of a species tree, which restricts the space of possible join graphs. An arbitrary complete graph R with edges labelled on the alphabet {S, AD, NAD} is said to be valid if there exists a species tree and a polytomy whose join graph is R. We characterize below the valid graphs in terms of forbidden induced subgraphs. The proof is partially based on well-known results on P4-free graphs (Corneil et al. 1985).
+Theorem 3
+A graph R is valid if and only if RS is {P4,2K2}-free, meaning that no four vertices of RS induce a path of length 4, nor two vertex-disjoint edges.
+
+
+
+
+Although we have not been able to find an exact polynomial-time algorithm for the MinNADref problem, this very constrained structure of the R graph yields a bounded heuristic for this problem with good theoretical properties described in the next section.
+Remark 1
+The P4-free property, which was already introduced in relation with reconciliations in (Hellmuth et al., 2013), is of special interest, as many NP-hard problems on graphs have been shown to admit polynomial time solutions when restricted to this class of graphs. Unfortunately we can prove that, given an arbitrary P4-free graph on which we add AD edges, finding an optimal W is still NP-hard (proof not shown). However, the added 2K2-free restriction imposes a rigid structure on the graph at hand, and we conjecture that there exists a polynomial time algorithm to find an optimal W.
+
+
+
+
+4 A BOUNDED HEURISTIC
+We first describe a general approach based on the notion of useful speciations, followed by a refinement of this approach with guaranteed optimality criteria.
+Definition 3
+Let J=(J1,…,J|J|)
+be a join sequence. A join Ji={G1,G2}
+of J is a useful speciation if jt(G1,G2)=S
+and G1, G2 are in two different AD-components of the R graph obtained after applying the J1,…,Ji−1
+joins.
+
+
+
+
+Hence, if R has c AD-components, finding a zero NAD solution becomes the problem of finding a join sequence with c−1 useful speciations. For example, the graph R in Figure 1 has five AD-components (three trivial and two non-trivial), and thus the four useful speciations represented by the red lines lead to a 0 NAD solution (the binary tree H). In the general case, the problem we face is to select as many useful speciations as possible, as the resulting AD-components will have to be connected by NAD joins. If we define a speciation-free forest as a forest F such that no edge of its join graph R is a speciation edge, following Lemma 1, we would like to first compute a set of useful speciations that results in a speciation-free forest whose join-graph has the least number of AD-components.
+Definition 4
+A lowest useful speciation is a useful speciation edge {G1,G2}
+of RS such that s(G1,2)
+is not the ancestor of any s(Gi,j), for {Gi,Gj}
+being another useful speciation edge of RS.
+
+
+
+
+Lowest useful speciations fit naturally in the context of bottom-up algorithms where speciations edges that correspond to lower vertices of S are selected before speciations edges corresponding to ancestral species. The theorem below shows that proceeding along these lines ensures that the resulting join sequence contains at least half of the optimal number of useful speciation.
+Theorem 4
+Let s be the maximum number of useful speciations leading to a solution to the MinNADref problem. Then any algorithm that creates a speciation-free forest through lowest useful speciations makes at least ⌈s/2⌉
+useful speciations.
+
+
+
+
+This theorem implicitly defines a heuristic with approximation ratio 2 on the number of useful speciations that visits S in a bottom-up way, making useful speciations (which would thus be lowest useful speciations) whenever such an edge is available.
+
+We now describe an improved version of this general heuristic principle. A detailed example is given in Figure 2. The main idea is to consider a bottom-up traversal of the species tree S, and foreach visited vertex s, to find a useful set of speciation edges byfinding a matching in a bipartite graph. More precisely, foranode s∈V(S), we consider the complete bipartite graph B=(X∪Y,{xy|x∈X,y∈Y}) such that the left (respectively right) subset X (respectively Y) contains all the trees Gi of Fwhere s(Gi) is on the left (respectively right) subtree of s. Consider the two partitions ADX and ADY of X and Y, respectively, into AD-components. The key step of our heuristic is to find a matching M⊆E(B) of useful speciations between ADX and ADY, called a useful matching. For example, in Figure 2, the bipartite graph and matching illustrated for Step 3 correspond to node l and that of Step 4 to node m of S.
+Fig. 2. A species tree S and a forest F of binary trees forming the polytomy. The trees of F are placed on S according to their LCA. The i, k, l and m nodes of S are annotated with the forest obtained after running Algorithm 2 on these nodes. Their corresponding complete bipartite matching instances are illustrated at the bottom. AD joins are represented by dotted lines, useful matching are represented by plain lines (we omit drawing all the other edges of the complete bipartite graphs). Note that there is a bridge induced by M between (F, K) and I at step 4. In the fourth step, we obtain a single connected component, which allows, in a final step, to connect all the subtrees by AD nodes (final tree is on the top of the figure)
+
+
+
+Notice that not all edges of B correspond to useful speciations. Indeed it is possible that for some x∈X and some y∈Y, although {x, y} is a speciation edge, x and y are in the same AD-component of R due to another tree z not in B such that {x, z} and {z, y} are AD-edges. For example in Figure 1, although {(a),(g)} is a join of type S, the trees (a) and (g) are in the same AD-component of R due to the tree ((a,f),(g,h)). For a vertex x of X (respectively y of Y), denote by AD(x) (respectively AD(y)) the component of ADX (respectively ADY) containing x (respectively y). We indicate the fact that AD(x) and AD(y) belong to the same AD-component in R by adding two dummy genes b1 in AD(x) and b2 in AD(y), and a bridge
+{b1,b2} in E(B). Such bridges will be included in every matching, preventing to include non-useful speciation edges.
+
+An instance P of the problem associated with a vertex s of S is denoted by P=(X,Y,ADX,ADY,B) where X, Y, ADX, ADY are defined as above and B is the set of bridges induced by R. The graph corresponding to P, i.e. the complete bipartite graph on sides X and Y to which we added the bridge edges B, is denoted by B(P). The whole method is summarized in Algorithm 1 MinNADref(F,S) and illustrated on a simple example in Figure 2.
+
+Algorithm 1: MinNADref(F,S).
+for each node s of S in a bottom-up traversal of S
+do
+
+ Let P=(X,Y,ADX,ADY,B) be the problem instance corresponding to s;
+
+ Find a useful matching M of B(P) of maximum size (Algorithm MaxMatching below);
+
+ Apply each speciation of M, and update F
+
+end for
+
+For each connected component C of RAD, join the trees of C under AD Nodes;
+
+If there is more than one tree remaining, join them under NAD nodes.
+
+
+
+Finding a useful matching of maximum size can be done in polynomial time by Algorithm 2. For an instance P=(X,Y,ADX,ADY,B), the algorithm progressively increments the set M of speciation edges, eventually leading to a useful matching of maximum size. At a given step, let GP,M be the graph with vertices X∪Y and edges EP,M=EAD∪M, where EAD is the set of AD edges of R connecting vertices of X∪Y. Components ADXi∈ADX and ADYj∈ADY are linked if there is a path in GP,M linking a vertex of ADXi to a vertex of ADYj, and not linked otherwise.
+
+Algorithm 2:MaxMatching(X,Y,XX,ADY,B).
+D=∅; M = B;
+
+while
+D≠X∪Y
+do
+
+ Find C∈ADX∪ADY of maximum cardinality with vertices not included in D, if any; assume w.l.o.g. C=ADXi∈ADX;
+
+ for each x∈C that is not incident to an edge in M
+do
+
+  if there is an y∈Y such that AD(y) is not linked to C
+then
+
+   Find such y with AD(y) of maximum cardinality;
+
+   Add the vertices x and y to D and add the speciation edge {x, y} to M;
+
+  end if
+
+ end for
+
+ Add remaining vertices of C to D;
+
+end while
+
+Theorem 5
+Given an instance P=(X,Y,ADX,ADY,B), Algorithm 1 finds a useful matching M of maximum size.
+
+Algorithm 1 is a heuristic, as it may fail to give the optimal solution (refinement with minimum number of NADs), as in Figure 1 for example. In this example, a bottom-up approach would greedily speciate a and d, which cannot lead to the optimal solution. However, we prove in Theorem 6 that if transitivity holds for the duplication join type, then Algorithm 1 is an exact algorithm for the MinNADref problem. The example of Figure 1 does not satisfy this property, as {(a),((a,f),(g,h))} is a join of duplication type (AD), {((a,f),(g,h)),(g)} is a join of duplication type but {(a),(g)} is a join of speciation type.
+Theorem 6
+(1) Let s be the maximum number of useful speciations leading to a solution to the MinNADref problem. Then, Algorithm 1 makes at least ⌈s/2⌉
+useful speciations. (2) If, for every node s of S
+the instance P corresponding to s has no bridges, then Algorithm 1 outputs a refinement of the input polytomy with the maximum number of useful speciations.
+
+
+
+
+The following corollary provides an alternative formulation of the optimality result given by the above theorem.
+Corollary
+Algorithm 1 exactly solves the MinNADref problem for an input (F,S)
+such that each AD-component of the corresponding graph R is free from S edges (i.e. there is no S edge between any two vertices of a given AD-component).
+
+
+
+
+5 GENE TREE CORRECTION
+The polytomy refinement problem is motivated by the problem of correcting gene trees. Duplication nodes can be untrusted for many reasons, one of them being the fact that they are NADs, pointing to disagreements with the species tree that are not due to the presence of duplicated genes. Different observations tend to support the hypothesis that NAD nodes may point at erroneous parts of a gene tree (Chauve and El-Mabrouk, 2009; Swenson et al., 2012). For example, the Ensembl Compara gene trees (Vilella et al., 2009) have all their NAD nodes labelled as ‘dubious’. In (Chauve and El-Mabrouk, 2009), using simulated datasets based on the species tree of 12 Drosophila species given in (Hahn et al., 2007) and a birth-and-death process, starting from a single ancestral gene, and with different gene gain/loss rates, it has been found that 95% of gene duplications lead to an AD vertex. Although suspected to be erroneous, some NAD nodes may still be correct, due to a high number of losses. However, in the context of reconciliation, the additional damage caused by an erroneous NAD node is the fact that it significantly increases the real rearrangement cost of the tree (Swenson et al., 2012). Therefore, tools for modifying gene trees according to NADs are required. We show now how Algorithm 1 can be used in this context.
+
+In (Lafond et al., 2013), a method for correcting untrusted duplication nodes has been developed. The correction of a duplication node x relies on pushing x by multifurcation, which transforms x into a speciation node with two children being the roots of two polytomies. Figure 3 recalls the pushing by multifurcation procedure. These polytomies are then refined by using an algorithm developed in (Lafond et al., 2012), which optimizes the mutation cost of reconciliation.
+Fig. 3. A gene tree G and a species tree S, from which we obtain G* by pushing x by multifurcation. Here, x is a NAD, and is pushed by taking the forest of maximal subtrees of G that only have genes from species in the sl subtree (green), then another forest for the sr subtree (red) in the same manner. Both these forests are joined under a polytomy, which are then joined under a common parent, so the root of G* is a speciation
+
+
+
+In the context of correcting NADs, we use the same general methodology, but now using Algorithm MinNADref for refining polytomies. Removing all NADs of a gene tree can then be done by iteratively applying the above methodology on the highest NAD node of the tree (the closest to the root).
+
+6 RESULTS
+Simulated data. Simulations are performed as follows. For a given integer n, we generate a species tree S with a random number of leaves between 0.5n and 3n. We then generate a forest F=(G1,…,Gn) of cherries by randomly picking, for each cherry Gi∈F, one node si∈S and two leaves, one from each of the two subtrees rooted at si. Any leaf of S is used at most once (possibly by adding leafs to S if required), leading to a set of cherries related through joins of type S or NAD. Then, for each pair {Gi,Gj} with join type NAD, we relate them through AD with probability 1/2 (or do nothing with probability 1/2), by adding a duplicated leaf.
+
+For each pair (S,F), we compared the number of NADs found by Algorithm MinNADref with the minimum number of NADs returned by an exact algorithm exploring all possible binary trees that can be constructed from F. We generated a thousand random S and F for each n≥4. We stopped at n = 14, as the brute-force algorithm is too time-costly beyond this point. Over all the explored datasets simulated as described above, Algorithm MinNADref was able to output an optimal solution, i.e. a refinement with the minimum number of NADs. Therefore, the examples on which the heuristic fails seem to be rare, and the algorithm performs well on polytomies of reasonable size.
+
+We then wanted to assess how the NAD minimization criterion differs from the rearrangement cost minimization criterion. We generated 960 random instances with forests of sizes ranging between 5 and 100 (10 instances for each 5≤n≤100). We compared the output of Algorithm MinNADref with that of Algorithm MinDLref, given in (Lafond et al., 2012), which computes refinement minimizing the duplication+loss (DL) cost of reconciliation with the species tree. Both algorithms gave the exact same refinement for only 12 instances (1.25%). As expected, Algorithm MinNADref always yielded a refined tree with a lower or equal number of NADs than the tree given by Algorithm MinDLref, but always had a higher or equal DL-cost. However, in many cases, minimizing the DL-score did not minimize the number of NADs, as in 377 instances (39.3%), Algorithm MinNADref yielded strictly less NADs than Algorithm MinDLref.
+
+Ensembl Gene Trees. 
+
+Next we tested the relevance of the proposed gene tree correction methodology, by exploring how Ensembl gene trees are corrected from one release to another. As the Ensembl general protocol for reconstructing gene trees does not change between releases, the observed modifications on gene trees are more likely due to modifications on gene sequences.
+
+We used the Ensembl Genome Browser to collect all available gene trees containing genes from the monophyletic group of ray-finned fishes (Actinopterygii), and filtered each tree to preserve only genes from the taxa of interest (ray-finned fish genomes). We selected from both Releases 74 (the present one) and 70 the 1096 gene trees that are present in both with exactly the same set of genes from the monophyletic group of fishes, and with less NAD nodes in Release 74. We wanted to see to what extent our general principle of correcting an NAD by transforming it to a speciation node is observed by comparing Rel.70 to Rel.74. Such a transformation requires to preserve the clade of the corrected NAD node x of the initial tree, meaning that l(x) should also be the leaf-set of a subtree in the corrected tree. For >90% of these trees (993 trees), the highest NAD node clade was preserved in Rel.74. Moreover, among all such nodes that were corrected, i.e. were not NAD nodes in Rel.74 (641 trees), almost all were transformed into speciation nodes (630 trees), which strongly supports our correction paradigm.
+
+To evaluate our methodology for correcting NADs, we applied it to the highest NAD node of each of the 1096 aforementioned trees of Rel.70. Figure 4 illustrates a comparison between the corrected trees (Rel.70C, C standing for ‘Corrected’) obtained by our methodology and those of Rel. 74. Pairwise comparisons are based on the normalized Robinson–Foulds (RF) distance (number of identical clades divided by the total number of clades). The yellow curve shows a good correlation between Rel.70C and Rel.74, with ∼65% exhibiting >80% similar clades between Rel.70C and Rel.74. If we reduce the set of trees to those for which the highest NAD node is also transformed to a speciation node in Rel.74 (630 trees), the correlation is even better (blue curve of Fig. 4), with 44% of trees being identical (277 over 630 trees) and ∼80% exhibiting >80% similar clades between Rel.70C and Rel.74. Now, to specifically evaluate Algorithm MinNADref, we further restricted the set of trees to those giving rise to a non-trivial polytomy (i.e. polytomy of degree > 2) after the pushing by multifurcation, which leads to a set of 117 trees. Overall, the results for these trees (red curve in Fig. 4) are close to those observed for all trees (yellow curve) detailed above.
+Fig. 4. Normalized RF-distance between corrected gene trees (by modification of the highest NAD) from Rel. 70 and corresponding gene trees in Rel. 74. Blue curve: transformation of the highest NAD into a speciation. Red curve: trees with a non-trivial polytomy after pushing by multifurcation. Yellow curve: all trees
+
+
+
+We then wanted to evaluate our correction of the 117 aforementioned trees compared with trees in Rel.74. Figure 5 provides an evaluation of the corrected trees (yellow curve) compared with those in Rel. 74 (blue curve) based on the normalized RF distance with the initial trees in Rel.70. Overall, the initial tree is closer to our correction than to the one of Rel.74. Therefore, even though gene trees of Rel.74 are likely to have stronger statistical support with respect to the gene sequences provided in Rel.74, our correction removes NADs while respecting as much as possible the given tree topology. Finally, we considered the reconciliation mutation cost as another evaluation criterion. Among the 117 trees of Rel.70C, 30 are identical to the corresponding trees in Rel. 74, and 60% have a lower mutation cost, which tend to support our correction compared with the tree in Rel.74. As for the 40% remaining trees, half of them have more NADs than the corresponding tree in Rel.74, which suggests that applying our correction to all NAD, instead of just the highest one, would help to obtain better results.
+Fig. 5. Normalized RF-distance between corrected trees (yellow curve) and Rel. 74 trees (blue curve) and original Rel. 70 trees
+
+
+
+Finally, we evaluated the effect of NAD correction on the tree likelihood. For this purpose, we selected the 1891 Ensembl Rel.74 gene trees of the considered monophyletic group containing at least one NAD, and we corrected each NAD individually. The sequences were aligned using ClustalW (Larkin et al., 2007) and the likelihood values were computed with PhyML (Guidon et al., 2003). For a tree T and a NAD node x, denote by Tx the tree obtained after correcting x. For each T and each x, we computed the log-likelihood ratio L(x)
+=
+logLH(T)/logLH(Tx). Among the 4454 NAD nodes found in the considered set of trees, 95.4% of the L(x) ratios were between 0.98 and 1.02. Although the correction algorithm is not expected to outperform the Ensembl protocol in terms of likelihood as it ignores sequences, we found that the likelihood of the tree has been improved (L(x) > 1) after correction for 43.9% of the NAD nodes. Moreover, 1180 (62.4%) trees contained at least one NAD node improving the likelihood.
+
+7 CONCLUSION
+The present work is dedicated to the polytomy refinement problem. While the mutation cost of reconciliation has been used previously as an optimization criterion for choosing an appropriate binary tree, here we use an alternative criterion, which is the minimization of NADs. The tractability of the MinNADref Problem remains open, as is the problem to select, among all possible solutions, those leading to a minimum reconciliation cost. Although developing a gene tree correction tool is not the purpose of this article, we show how our algorithm for polytomy refinement can be used in this context, by developing a simple algorithm allowing to correct a single NAD. This algorithm has been applied to trees of a previous Ensembl release, and the corrected trees have been compared with the trees of the current Ensembl release. A good correlation between the two sets of trees is observed, which tends to support our correction paradigm. While minimizing NADs cannot be a sufficient criterion for gene tree correction, it should rather be seen as one among others, such as statistical (Wu et al., 2012), syntenic (Lafond et al., 2013) or based on reconciliation with the species tree (Chaudhary et al., 2011; Lafond et al., 2013; Swenson et al., 2010), that can be integrated in a methodological framework for gene tree correction.
+
+Funding: N.E.-M. and M.L. are supported by ‘Fonds de recherche du Québec—Nature et technologies’ (FRQNT). C.C. and N.E.-M. are supported by the Natural Sciences and Engineering Research Council of Canada (NSERC). R.D. is supported by the MIUR PRIN 2010–2011 grant ‘Automi e Linguaggi Formali: Aspetti Matematici e Applicativi’, code H41J12000190001.
+
+Conflict of interest: none declared.
+
+Supplementary Material
+Supplementary Data
+==== Refs
+REFERENCES
+Akerborg O    Simultaneous bayesian gene tree reconstruction and reconciliation analysis Proc. Natl Acad. Sci. USA 2009 106 5714 5719 19299507 
+Beiko RG  Hamilton N   Phylogenetic identification of lateral genetic transfer events BMC Evol. Biol. 2006 6 15 16472400 
+Berglund-Sonnhammer AC    Liberles. Optimal gene trees from sequences and species trees using a soft interpretation of parsimony J. Mol. Evol. 2006 63 240 250 16830091 
+Boussau B    Genome-scale coestimation of species and gene trees Genome Res. 2012 23 323 330 23132911 
+Chang WC  Eulenstein O   Reconciling gene trees with apparent polytomies 2006 In: COCOON 2006 . Lecture Notes in Computer Science. Vol. 4112, Springer, Taiwan, pp. 235–244 
+Chaudhary R    Efficient error correction algorithms for gene tree reconciliation based on duplication, duplication and loss, and deep coalescence BMC Bioinformatics 2011 13 Suppl.10 S11 22759416 
+Chauve C  El-Mabrouk N   New perspectives on gene family evolution: losses in reconciliation and a link with supertrees 2009 RECOMB 2009 . Lecture Notes in Computer Science. Vol. 5541, Springer, USA, pp. 46–58 
+Chen K    Notung: dating gene duplications using gene family trees J. Comp. Biol. 2000 7 429 447 
+Corneil DG    A linear recognition algorithm for cographs SIAM J. Comput. 1985 14 926 934 
+Datta RS    Berkeley phog: phylofacts orthology group prediction web server Nucleic Acids Res. 2009 37 W84 W89 19435885 
+Doroftei A  El-Mabrouk N   Removing noise from gene trees 2011 WABI 2011 . Lecture Notes in Bioinformatics. Vol. 6833, Springer, Germany, pp. 76-91 
+Durand D    A hybrid micro-macroevolutionary approach to gene tree reconstruction J. Comput. Biol. 2006 13 320 335 16597243 
+Larkin MA    Clustalw and clustalx version 2 Bioinformatics 2007 23 2947 2948 17846036 
+Flicek P   Ensembl 2012 Nucleic Acids Res. 2012 40 D84 D90 22086963 
+Gorecki P  Eulenstein O   Algorithms: simultaneous error-correction and rooting for gene tree reconciliation and the gene duplication problem BMC Bioinformatics 2011a 13 Suppl. 10 S14 22759419 
+Gorecki P  Eulenstein O   A linear-time algorithm for error-corrected reconciliation of unrooted gene trees 2011b ISBRA 2011 . Lecture Notes in Bioinformatics. Vol. 6674, Springer, China, pp. 148–159 
+Guidon S  Gascuel O   A simple, fast and accurate algorithm to estimate large phylogenies by maximum likelihood Syst. Biol. 2003 52 696 704 14530136 
+Hahn MW    Gene family evolution across 12 drosophilia  genomes PLoS Genet. 2007 3 e197 17997610 
+Hellmuth M    Orthology relations, symbolic ultrametrics, and cographs J. Math. Biol. 2013 66 399 420 22456957 
+Huerta-Cepas J    Phylomedb v3.0: an expanding repository of genome-wide collections of trees, alignments and phylogeny-based ozrthology and paralogy predictions Nucleic Acids Res. 2011 39 D556 D560, 2011 21075798 
+Lafond M    Gene tree correction guided by orthology BMC Bioinformatics 2012 14 Suppl. 15 S5 24564227 
+Lafond M    Models and algorithms for genome evolution Error Detection and Correction of Gene Trees 2013 Springer, Canada. 2013 
+Lafond M    An optimal reconciliation algorithm for gene trees with polytomies 2012 WABI 2012 . Lecture Notes in Computer Science. Vol. 7534. pp. 106–122 
+Mi H    Panther in 2013: modeling the evolution of gene function, and other gene attributes, in the context of phylogenetic trees Nucleic Acids Res. 2012 41 D377 D386 23193289 
+Rasmussen MD  Kellis M   A bayesian approach for fast and accurate gene tree reconstruction Mol. Biol. Evol. 2011 28 273 290 20660489 
+Ronquist F  Huelsenbeck JP   MrBayes3: Bayesian phylogenetic inference under mixed models Bioinformatics 2003 19 1572 1574 12912839 
+Saitou N  Nei M   The neighbor-joining method: a new method for reconstructing phylogenetic trees Mol. Biol. Evol. 1987 4 406 425 3447015 
+Schreiber F    Treefam v9: a new website, more species and orthology-on-the-fly Nucleic Acids Res 2013 42 D922 D925 24194607 
+Scornavacca C    From gene trees to species trees through a supertree approach 2009 LATA 2009 . Lecture Notes in Computer Science. Vol. 5457. pp. 702–714 
+Swenson KM    Gene tree correction for reconciliation and species tree inference Algorithms Mol. Biol. 2012 7 31 23167951 
+Szöllosi GJ    Efficient exploration of the space of reconciled gene trees Syst. Biol. 2013 62 901 912 23925510 
+Nguyen TH    Reconciliation and local gene tree rearrangement can be of mutual profit Algorithms Mol. Biol. 2013 8 12 23566548 
+Thomas PD   GIGA: a simple, efficient algorithm for gene tree inference in the genomic age BMC Bioinformatics 2010 11 312 20534164 
+Vernot B    Reconciliation with non-binary species trees J. Comput. Biol. 2008 15 981 1006 18808330 
+Vilella AJ    EnsemblCompara genetrees: complete, duplication-aware phylogenetic trees in vertebrates Genome Res. 2009 19 327 335 19029536 
+Wapinski I    Automatic genome-wide reconstruction of phylogenetic gene trees Bioinformatics 2007 23 i549 i558 17646342 
+Wu Y-C    Treefix: statistically informed gene tree error correction using species trees Syst. Biol. 2012 62 110 120 22949484 
+Zheng Y    Reconciliation of gene and species trees with polytomies 2012 eprint arXiv:1201.3995

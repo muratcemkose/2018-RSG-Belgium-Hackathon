@@ -1,0 +1,318 @@
+
+==== Front
+BioinformaticsBioinformaticsbioinformaticsbioinfoBioinformatics1367-48031367-4811Oxford University Press 10.1093/bioinformatics/btu863btu863Original PapersSystems BiologyCombining tree-based and dynamical systems for the inference of gene regulatory networks Huynh-Thu Vân Anh 1*Sanguinetti Guido 12*1School of Informatics, University of Edinburgh, Edinburgh EH8 9AB, and 2SynthSys - Systems and Synthetic Biology, University of Edinburgh, Edinburgh EH9 3JD, UK*To whom correspondence should be addressed.Associate Editor: Igor Jurisica
+
+15 5 2015 07 1 2015 07 1 2015 31 10 1614 1622 18 10 2014 5 12 2014 23 12 2014 © The Author 2015. Published by Oxford University Press.2015This is an Open Access article distributed under the terms of the Creative Commons Attribution Non-Commercial License (http://creativecommons.org/licenses/by-nc/4.0/), which permits non-commercial re-use, distribution, and reproduction in any medium, provided the original work is properly cited. For commercial re-use, please contact journals.permissions@oup.comMotivation: Reconstructing the topology of gene regulatory networks (GRNs) from time series of gene expression data remains an important open problem in computational systems biology. Existing GRN inference algorithms face one of two limitations: model-free methods are scalable but suffer from a lack of interpretability and cannot in general be used for out of sample predictions. On the other hand, model-based methods focus on identifying a dynamical model of the system. These are clearly interpretable and can be used for predictions; however, they rely on strong assumptions and are typically very demanding computationally.
+
+Results: Here, we propose a new hybrid approach for GRN inference, called Jump3, exploiting time series of expression data. Jump3 is based on a formal on/off model of gene expression but uses a non-parametric procedure based on decision trees (called ‘jump trees’) to reconstruct the GRN topology, allowing the inference of networks of hundreds of genes. We show the good performance of Jump3 on in silico and synthetic networks and applied the approach to identify regulatory interactions activated in the presence of interferon gamma.
+
+Availability and implementation: Our MATLAB implementation of Jump3 is available at http://homepages.inf.ed.ac.uk/vhuynht/software.html.
+
+Contact:
+vhuynht@inf.ed.ac.uk or G.Sanguinetti@ed.ac.uk
+
+Supplementary information:
+Supplementary data are available at Bioinformatics online.
+==== Body
+1 Introduction
+Computational reconstruction of gene regulation from expression data is a central problem of systems biology (Alon, 2006). Gene regulation is a complex process involving multiple control steps at the chromatin, transcriptional and post-transcriptional level (Alberts et al., 2008); given the difficulty in measuring and modelling all of these individual processes, the identification of a suitable abstraction and associated statistical inference methodology is vital. The gene regulatory network (GRN) abstraction aims at explaining the joint variability in the expression levels of a group of genes through a sparse pattern of interactions; elucidating the topology of GRNs can provide important insights in the fundamental biology of the system and suggest possible intervention points in biomedical applications.
+
+Inferring the topology of a GRN from gene expression time-series data has been a subject of intense research in computational biology over the last 15 years (Bansal et al., 2007; De Smet and Marchal, 2010; Penfold and Wild, 2011). Current approaches can be broadly divided into model-based and model-free approaches. Model-based methods start by formulating a computational model of the system, usually in the form of differential or difference equations and recast the network inference problem as learning the parameters of such a model. To achieve a sparse pattern of interactions, such methods usually employ sparsity-inducing priors in a Bayesian setting or regularization penalties in an optimization-based scenario. Model-based methods have many appealing qualities: the assumptions made are transparently stated and, most importantly, the generative perspective enables principled predictions of expression levels under perturbations. However, model-based methods are not free from limitations: they tend to be computationally intensive, particularly in a Bayesian setting, and their parametric nature usually implies very stringent assumptions about the dynamics (e.g. linear), which may be difficult to justify biologically. Model-free methods avoid the pitfalls of model-based methods by greedily optimizing information-theoretic measures of co-variation between pairs of genes (Faith et al., 2007; Huynh-Thu et al., 2010; Margolin et al., 2006). Such methods typically have good scalability, enabling reconstructions of networks of hundreds of genes and have consistently achieved state-of-the-art reconstruction performance in comparative evaluations (Marbach et al., 2012). The lack of an underpinning model also enables great flexibility, as the interactions between genes are not constrained to follow a parametric functional representation. Such flexibility comes at a cost though: model-free methods, by their very nature, do not have clearly defined semantics in terms of dynamical systems and cannot be used for prediction in a straightforward way. Furthermore, incorporation of side information, which is natural in model-based methods, is generally challenging in model-free methods.
+
+In this article, we aim to bridge the gap between model-based and model-free methods by proposing a hybrid approach to the network inference problem, called Jump3. Our approach starts from a well-defined, biologically plausible model of gene expression, the on/off model of gene expression (Ocone et al., 2013; Ptashne and Gann, 2002), which we use to model the dynamics of individual nodes. Reconstruction of the edges is instead based on a non-parametric, tree-based method modelled on the state-of-the-art GENIE3 method (Huynh-Thu et al., 2010). Adapting the tree-based method to the probabilistic setting is a novel challenge in machine learning and involves devising a novel decision function for learning the tree. Here, we introduce the ‘jump tree’, which uses the marginal likelihood of the node’s dynamical model as a decision function. This choice has several benefits: it embeds the tree-based learning procedure in the probabilistic model, effectively grounding it as a greedy solution to structure learning in a large latent-variable model. Furthermore, the use of the marginal likelihood means our method inherits the ease with which side information can be incorporated in probabilistic models. Our experiments with both synthetic and real data show that Jump3 has good scalability and achieve competitive or better results than state-of-the-art alternatives.
+
+2 Model and methods
+Here, we describe Jump3, a hybrid approach for GRN inference that is based on a formal dynamical model of the expression of each gene of the GRN and that employs a greedy, non-parametric, method for reconstructing the topology of the GRN. Exploiting time series of expression data, Jump3 assigns a confidence score to each putative regulatory link of the GRN. Note that in this article, we leave open the problem of choosing a threshold on the weights to obtain a practical network and focus on providing a ranking of the regulatory links.
+
+2.1 Gene expression model
+At the heart of our framework, we use the on/off model of gene expression (Ptashne and Gann, 2002), a simple, yet plausible, model where the rate of transcription of a gene can vary between two levels depending on the activity state μ of the promoter of the gene. The expression x of a gene is modelled through the following stochastic differential equation (SDE):
+ (1) dxi=(Aiμi(t)+bi−λixi)dt+σdw(t), 
+where subscript i refers to the ith target gene. Here, the promoter state μi(t) is a binary variable (the promoter is either active or inactive), which depends on the expression levels of the transcription factors (TFs) that bind to the promoter (see Fig. 1). Θi={Ai,bi,λi} is the set of kinetic parameters. Ai represents the efficiency of the promoter in recruiting polymerase when being in the active state, bi denotes the basal transcription rate and λi is the exponential decay constant of xi. The term σdw(t) represents a white noise-driving process with variance σ2.
+Fig. 1. Example of GRN. Circles represent the observed gene expressions, and squares represent the latent promoter states. Thick arrows model the promoter activations and show the network topology
+
+
+
+
+For a given trajectory of the promoter state, i.e. when we are given the states μi(t),∀t, the SDE (1) is linear and its solution xi(t) is equivalent to a Gaussian Markov process, i.e. an Ornstein–Uhlenbeck (OU) process (Gardiner, 1996). The mean mi(t) and covariance ci(t,t′) functions of this OU process are given by:
+ mi(t)=xi(0)e−λit+Ai∫0te−λi(t−τ)μi(τ)dτ+biλi(1−e−λit)ci(t,t′)=σ22λi(e−λi|t−t′|−e−λi(t+t′)) 
+Note that the covariance function contains two terms, one that is stationary (e−λi|t−t′|) and one that is non-stationary (e−λi(t+t′)). The second term is typically much smaller than the first one and thus could be neglected in practice. We, however, assume that a perturbation is applied to the network at t = 0, and we use the covariance function with its non-stationary term to take into account the initial transient behaviour of the network.
+
+Let us assume that the gene expression xi is observed with i.i.d. Gaussian noise at a finite number N of time points:
+ x^i,k=xi(tk)+ϵi,k,ϵi,k∼N(0,si,k2),k=1,…,N, 
+where si,k2 is the variance of the observation noise at time point tk. As a consequence, the observed expression levels follow a multivariate normal distribution:
+ x^i∼N(mi,Ci+Di), 
+where mi=[mi(t1),mi(t2),…,mi(tN)]⊤, Ci∈RN×N denotes the covariance matrix, with Ci[k,l]=ci(tk,tl) and Di∈RN×N is a diagonal matrix with the values si,k2 along the diagonal. One can therefore compute the marginal log likelihood of the observations, given by:
+ (2) L=log⁡p(x^i)=−N2log⁡(2π)−12log⁡|Ci+Di|−12(x^i−mi)⊤(Ci+Di)−1(x^i−mi). 
+Notice that this probabilistic formulation allows for a natural incorporation of replicate information by simply multiplying the likelihoods of replicate profiles.
+
+Within this context, our goal is, for each target gene i:
+To identify the promoter state trajectory μi over the time interval [0,tN] that maximizes the log likelihood L;
+
+To identify the regulators of the target gene, i.e. the genes whose expression levels influence μi.
+
+
+
+Both problems are jointly addressed by using a non-parametric approach described in the next section and illustrated in Figure 2.
+Fig. 2. The Jump3 framework. For each target gene i=1,…,p, a function fi in the form of an ensemble of jump trees is learned from the time series of expression data. The trajectory of the state of the promoter of gene i (μi) is predicted from the jump tree model and an importance score is computed for each candidate regulator. The score of a candidate regulator j is used as weight for the regulatory link directed from gene j to gene i
+
+
+
+
+2.2 Network reconstruction with jump trees
+In our model, we make the assumption that the state of the promoter of a target gene i is a function of the expression levels of the genes that are direct regulators of gene i, i.e. the genes that are directly connected to gene i in the targeted network (Fig. 1). Denoting by xreg,i(t) the vector containing the expression levels at time t of the regulators of gene i, we can write:
+ μi(t)=fi(xreg,i(t))+ξt,∀t, 
+where ξt is a random noise with zero mean. Recovering the regulatory links pointing to gene i thus amounts to finding the genes whose expression is predictive of the promoter state μi. To achieve this goal, we propose a procedure based on decision trees, which computes confidence scores wj,i,∀j≠i, measuring the importance of each gene j in the prediction of the state μi.
+
+2.2.1 Decision trees with a latent output variable
+Tree-based methods have been applied successfully in the inference of GRNs (Huynh-Thu et al., 2010) and have appealing properties (Geurts et al., 2009). First, they are non-parametric and hence do not make any assumption about the nature of the function fi, which can be non-linear. Another advantage of tree-based methods is their ability to detect multivariate interacting effects between features. This is a non-negligible advantage when inferring GRNs, since the regulation of gene expression is expected to be combinatorial, i.e. to involve several regulators. Tree-based methods are also essentially parameter-free, and since their computational complexity is at most linear in the number of features, they can deal with high-dimensionality.
+
+The basic idea of our GRN inference procedure is to learn for each target gene i a model fi in the form of a decision tree (or an ensemble of decision trees), which predicts the promoter state μi at any time t from the expression levels of the candidate regulators at the same time t. However, standard tree-based methods cannot be applied here since the output μi(t) is a latent variable. We therefore propose a new decision tree algorithm called ‘jump tree’. (In stochastic process theory, the discrete variable μi(t) is called a jump process. The term ‘jump tree’ thus refers to a tree that predicts such a jump process.) Briefly, a jump tree is constructed top-down using a greedy algorithm and partitions the set of observation time points into different subsets based on tests on the expression levels of the candidate regulators. Each terminal node (or leaf) of the jump tree then corresponds to a subset of time points at which μi is either 0 or 1. While in a standard decision tree the observations are split based on the minimization of the entropy of the output variable, in a jump tree the split is performed based on the maximization of the likelihood of the observations x^i.
+
+More formally, the different steps for learning a jump tree predicting the latent variable μi are the following:
+Initialization. Start with the simplest tree, which is only composed of one leaf. This leaf contains the whole set of N observation time points, and μi(t)=0,∀t, with a corresponding log likelihood L.
+
+Creation of a split node. Each iteration of the greedy algorithm consists in creating a split node from a leaf N and updating the promoter state trajectory and the likelihood. Given the current jump tree, the current promoter state trajectory μi and the current log likelihood L (obtained after the previous iteration), the set TN of observation time points of the leaf N is partitioned using the following procedure:
+a. Definition of a split. Given the observed expression x^j of a candidate regulator j≠i and a threshold value c, a candidate promoter state trajectory μij,c is obtained by setting:
+ μij,c(tk)={0,if x^j(tk)<c,1,if x^j(tk)≥c, 
+
+
+for each time point tk∈TN. For the time points that do not belong to TN, the promoter states are kept the same:
+ μij,c(tk)=μi(tk),∀tk∉TN. 
+
+
+Between two observation time points tk and tk+1, the states μij,c(t),tk<t<tk+1, are merely set to the state obtained at time point tk. Note that the condition j≠i can be relaxed to incorporate autoregulation; however, in our experiments we have kept it to improve identifiability.
+
+b. Evaluation of the split. The best candidate regulator j* and threshold c* are selected, i.e. those ones that yield the maximum likelihood:
+  
+
+
+where L(μij,c) is the likelihood obtained with the trajectory μij,c.
+
+c. Decision and update. If the likelihood is increased, i.e. L*>L, then:
+Replace the leaf N with a split node containing the optimal test ‘xj*<c*’;
+
+Split TN into two subsets T0 and T1 according to this test;
+
+The child nodes of the new split node are two leaves, containing, respectively, T0 and T1;
+
+Update the promoter state trajectory: μi←μij*,c*;
+
+Update the log likelihood: L←L*.
+
+
+
+
+
+Selection of the leaf. The order in which the leaves are turned into split nodes change the final value of the likelihood L. In our procedure, the jump tree is grown using a best-first strategy, i.e. at each iteration, steps 2a and 2b are repeated for each leaf of the current tree and the leaf that yields the highest maximum likelihood L* is selected. Step 2c is then applied to this leaf. This procedure is illustrated in Figure 3.
+
+Stop. The algorithm stops when L cannot be increased anymore, i.e. when L*≤L for each leaf of the current tree. The algorithm then outputs the current jump tree and the current trajectory of the promoter state μi.
+
+
+Fig. 3. Growing a jump tree predicting the state of the promoter of gene 1 (μ1). (A) Each iteration of the jump tree algorithm results in a new tree and a new trajectory μ1 (dashed line) yielding a likelihood L. In this example, the current tree splits the set of observation time points in two subsets TA and TB, each one corresponding to a leaf of the tree. The plot also shows the posterior mean m1 of the expression of gene 1 (solid line), with confidence intervals (shaded area), and the observed expression levels of gene 1 (dots). (B) For each leaf of the current tree, the optimal split of the corresponding set of time points is identified. (C) The leaf for which the optimal split yields the highest likelihood is replaced with a split node
+
+
+
+
+The jump tree pseudo-code can be found in Section 1 of the Supplementary Information.
+
+2.2.2 Ensemble of decision trees
+A fully grown decision tree typically overfits the observed data, and significant improvements can be obtained with ensemble methods that average the predictions of several randomized trees, e.g. Random Forests (Breiman, 2001) or Extra-Trees (Geurts et al., 2006).
+
+In Jump3, we use the Extra-Trees procedure, which randomizes the test at each split node of a tree (in step 2 of the jump tree algorithm). Rather than testing all the possible combinations of candidate regulator j and threshold c, the best split is determined among K random splits, each obtained by randomly selecting one candidate regulator (without replacement) and a threshold value. The prediction of μi(t) is then averaged over the different trees of the ensemble, yielding a probability for the promoter state to be active at time t.
+
+2.2.3 Importance measure
+The learned tree-based model is used to derive an importance score for each candidate regulator, quantifying the relevance of that candidate regulator for the prediction of μi(t). The importance wj,i of a candidate regulator j is then used as weight for the putative regulatory link of the network that is directed from gene j to gene i.
+
+We propose a measure that, at each split node N, computes the increase of the likelihood due to the split:
+ I(N)=L(μij*,c*)−L(μi), 
+where L(μi) and L(μij*,c*) are the log likelihoods, respectively, obtained before and after the split on N. For a single tree, the overall importance wj,i of one candidate regulator j is then computed by summing the I values of all tree nodes where this regulator is used to split:
+ wj,i=∑k=1nI(Nk)g(Nk,j), 
+where n is the number of split nodes in the tree and Nk denotes the kth split node. g(Nk,j) is function that is equal to one if the candidate regulator j is the one selected at node Nk and zero otherwise. The candidate regulators that are not selected at all thus obtain an importance score of zero and those ones that are selected close to the root node of the tree typically obtain high scores. Importance measures can be easily extended to ensembles of trees, by simply averaging the importances scores over all the trees of the ensemble.
+
+2.2.4 Regulatory link ranking
+Each tree-based model fi yields a separate ranking of the genes as potential regulators of a target gene i in the form of importance scores wj,i. For a single tree, the sum of the importance scores of all candidate regulators is equal to the total increase of likelihood yielded by the tree:
+ ∑j≠iwj,i=L(μi)−L(0), 
+where L(0) is the initial log likelihood obtained with μi(t)=0,∀t and L(μi) is the final log likelihood obtained after the tree has been grown. As a consequence, if we trivially order the regulatory links according to the scores wj,i, this is likely to introduce a positive bias for the regulatory links that are directed towards the genes for which the overall likelihood increase is high. To avoid this bias, we normalize the importance scores obtained from each tree, so that they sum up to one:
+ wj,i←wj,iL(μi)−L(0). 
+
+
+2.3 Computational complexity
+Since the value of the parameter λi is not optimized (see the details in the Supplementary Information), the computation of the covariance matrix Ci and the inversion of the matrix Ci+Di, which are required for the computation of the log likelihood L, are done only once for each target gene. Therefore, the runtime complexity of Jump3 comes mainly from the optimization of the parameters Ai and bi and the matrix multiplication in the last term of Equation (2), which are iteratively repeated during tree growing. Both parameter optimization and matrix multiplication have a complexity that is on the order of O(N2), where N is the number of observations. Let us assume for simplicity that each tree that is learned contains S splits. It can be shown that the complexity for growing an ensemble of jump trees using the Extra-Trees procedure is O(TKS2N2), where T is the number of trees and K is the number of randomly chosen candidate regulators when searching for the optimal split at a node. The complexity of Jump3 is thus O(pTKS2N2) since it requires to build an ensemble of trees for each of the p genes of the network. At worst, the complexity of the algorithm is thus quadratic with respect to the number of genes (when K=p−1) and O(N4) with respect to the number of observations (when S=N−1, i.e. each tree is fully developed with each leaf corresponding to one time point). However, this worst case scenario never happens in practice; S is usually much lower than N.
+
+Table 1 gives an idea of the computing times, using our MATLAB implementation with K set to the number of candidate regulators and 100 trees per ensemble. These computing times were measured on an 8-GB RAM, 1.7 GHz Intel core i7 computer. Note that the large amount of time required to infer a DREAM4 size-100 network is due to the high number of observations. Such a high number is usually not encountered in real datasets, where the number of observations is typically much lower than the number of genes.
+Table 1. Running times for varying network sizes and numbers of observations
+
+Network	No. Genes	No. Observations	Time	
+DREAM4	10	105	3 min	
+DREAM4	100	210	48 h	
+IFNγ	1000	25	4 h	
+
+
+The Jump3 algorithm can be easily parallelized over the p genes, as well as over the different trees of an ensemble.
+
+2.4 Performance metrics
+Jump3 provides a ranking of the regulatory links from the most confident to the least confident. To evaluate such a ranking independently of the choice of a specific threshold, we use the precision-recall (PR) curve and the area under this curve (AUPR). The PR curve plots, for different thresholds on the weights of the links, the proportion of true positives among all predictions (precision) versus the percentage of true positives that are retrieved (recall). A perfect ranking, i.e. a ranking where all the positives are located at the top of the list, yields an AUPR equal to one, while a random ranking results in an AUPR close to the proportion of positives (i.e. close to zero since the proportion of true links among all possible links in a network is usually very low).
+
+3 Results
+We evaluated the proposed Jump3 procedure on several in silico networks as well as one synthetic network (IRMA). As a case study, we applied the procedure to expression data from macrophages treated with interferon gamma (IFNγ), to identify IFNγ-activated regulatory interactions. In all our experiments, ensembles of 100 trees were grown and the main parameter K of the Extra-Trees was set to the number of input candidate regulators. For the in silico and IRMA networks, K=p−1, where p is the number of genes in the network and K = 40 in the case of the IFNγ network (see later for the description of that experiment).
+
+3.1 In silico networks
+We evaluated Jump3 on the networks of the DREAM4 In Silico Network challenge (Marbach et al., 2012; Prill et al., 2010), which are 5 networks of 10 genes and 5 networks of 100 genes. For each network topology, two types of simulated expression data were used:
+Toy data: we simulated the expression data using the on/off model based on Equation (1). A network perturbation was simulated through a switch in the promoter state of some genes and given a set of parameters Θi={Ai,bi,λi} for each gene i, the model was simulated to produce continuous time series for both promoter states and gene expressions. Noisy observations at discrete time points were obtained from the expression time series by adding i.i.d. Gaussian noise. The toy data are available in the Supplementary Material.
+
+DREAM4 data: we applied Jump3 to the time series data that was provided in the context of the DREAM4 challenge. Each time series experiment consisted in strongly increasing or decreasing the initial expression of about one-third of the genes, thereby simulating a physical or chemical perturbation. The perturbation was applied to the network at time t = 0 and was removed after 10 time points, making the system return to its original state.
+
+For each network of 10 (respectively 100) genes and each simulation type, noisy observations were sampled at 21 time points under 5 (respectively 10) different network perturbations, for a total of 105 (respectively 210) observations per gene.
+
+First, we checked the quality of the data modelling that is obtained with Jump3. Results on the toy and DREAM4 data are, respectively, shown in Figure 4 and Supplementary Figure S1 (in the Supplementary Material), for one gene of a size-100 network. We notice from a qualitative point of view that Jump3 returns a good prediction of the promoter state and that the on/off model has sufficient flexibility to provide a good fit of the gene expression, as shown before (Ocone et al., 2013; Opper et al., 2010).
+Fig. 4. Modelling results on the toy data, for one target gene. (A) Predicted promoter state μi(t) (solid line) versus true state (dashed line). (B) Posterior mean of gene expression xi(t), with confidence intervals. Points show observed expression x^i
+
+
+
+
+Next, we evaluated the performance of the method in terms of network reconstruction and we compared it to other existing network inference procedures: two model-free methods, which are time-lagged variants of GENIE3 (Huynh-Thu, 2012) and CLR (Faith et al., 2007), respectively; two model-based methods, namely Inferelator (Greenfield et al., 2010) and TSNI (Bansal et al., 2006), and G1DBN (Lèbre, 2009), a method based on dynamic Bayesian networks. For TSNI, a separate network was inferred for each perturbation, and a consensus network was computed as the average of the different inferred networks. For all the remaining methods, networks were inferred using the complete dataset (all perturbations simultaneously). GENIE3 was applied with the Extra-Trees, the parameter K set to the number of candidate regulators, and ensembles of 100 trees. TSNI was used with two principal components. The other methods were run using the default values of the parameters.
+
+AUPR values obtained for the size-100 networks are shown in Tables 2 and 3, for the toy and DREAM4 data, respectively. Results on the size-10 networks are shown in Supplementary Table S2. In the case of the toy data, Jump3 yields the highest AUPR for each network. As expected, its performance decreases when the networks are inferred from the DREAM4 data, due to the mismatch between the on/off model and the one used to simulate the data. For the small networks of 10 genes, CLR, Inferelator and G1DBN have the best performances, without a clear winner. Jump3 seems robust when inferring large networks, since it outperforms the other methods on the size-100 networks. Note that the official best methods of the DREAM4 challenge obtained higher AUPR levels because they used additional interventional (knockout and knockdown) data.
+Table 2. AUPRs for the size-100 networks (toy data)
+
+	Net1	Net2	Net3	Net4	Net5	
+Jump3	0.342	0.179	0.299	0.275	0.264	
+GENIE3-lag	0.121	0.117	0.125	0.103	0.105	
+CLR-lag	0.092	0.084	0.099	0.088	0.078	
+Inferelator	0.063	0.071	0.075	0.073	0.062	
+TSNI	0.017	0.022	0.017	0.023	0.021	
+G1DBN	0.106	0.064	0.108	0.126	0.114	
+The highest AUPR is shown in bold for each network.
+
+
+Table 3. AUPRs for the size-100 networks (DREAM4 data)
+
+	Net1	Net2	Net3	Net4	Net5	
+Jump3	0.270	0.110	0.200	0.180	0.174	
+GENIE3-lag	0.228	0.096	0.230	0.157	0.168	
+CLR-lag	0.179	0.109	0.238	0.154	0.163	
+Inferelator	0.126	0.101	0.198	0.147	0.148	
+TSNI	0.050	0.055	0.041	0.036	0.030	
+G1DBN	0.089	0.055	0.155	0.153	0.117	
+The highest AUPR is shown in bold for each network.
+
+
+
+3.2 The synthetic IRMA network
+The different GRN inference methods were applied to reconstruct the IRMA (In vivo Reverse-engineering and Modeling Assessment) network, a synthetic GRN embedded in the budding yeast Saccharomyces cerevisiae (Cantone et al., 2009). This network is composed of 5 genes and 6 regulatory interactions and can be activated and deactivated in the presence of galactose and glucose, respectively. The expression levels of the five genes were measured using quantitative RT-PCR during the transition from glucose to galactose (‘switch-on’ time series of 16 time points), as well as during the transition from galactose to glucose (‘switch-off’ time series of 21 time points).
+
+As shown in Table 4, Jump3 is competitive with the two model-based methods (Inferelator and TSNI) when inferring the network from the switch-on data. In the case of the switch-off data, Jump3 yields the best performance. Notice that while the model-free methods (GENIE3 and CLR) typically perform better than the model-based methods on the in silico networks, the opposite is observed here on the IRMA network. This shows that model-based methods can be very powerful on very small networks, but their performances rapidly degrade as the number of genes in the network increases.
+Table 4. AUPRs for the IRMA network
+
+	Switch-on	Switch-off	
+Jump3	0.685	0.682	
+GENIE3-lag	0.620	0.347	
+CLR-lag	0.423	0.372	
+Inferelator	0.718	0.649	
+TSNI	0.706	0.511	
+G1DBN	0.600	0.313	
+The highest AUPR is shown in bold in each case.
+
+
+
+Promoter state predictions and gene expression fits obtained with Jump3 are shown in Supplementary Figures S2 and S3.
+
+3.3 The IFNγ network
+Finally, we applied Jump3 to gene expression data from murine bone marrow-derived macrophages (Blanc et al., 2011). The macrophages were treated with interferon gamma (IFNγ) and gene expression levels were measured at 25 half-hourly time points over 12 h, using Agilent microarray platform. We focused our analysis on the 1000 genes whose expression vary the most across the time series. Forty of these genes were classified as TFs by Gray et al. (2004), and we applied Jump3, GENIE3 and CLR to identify regulatory interactions between these 40 TFs and all the 1000 genes.
+
+The 500 top-ranked regulatory links predicted by each method are shown in Figure 5A and supplementary Figure S4. (Cytoscape files for these three predicted IFNγ networks are also available in the Supplementary Material.) As can be seen in these figures, the predicted networks are highly modular with a few TFs acting as hubs and regulating a large number of target genes (although the modules of the CLR networks are less distinct). Figure 5B shows the (empirical) node degree distribution of the Jump3 network. Although the networks of GENIE3 and CLR share a relatively large number of edges, Jump3 yields very different predictions (Fig. 5C), indicating that the addition of a dynamical model significantly alters the networks found.
+Fig. 5. (A) IFNγ network predicted by Jump3. The network was drawn using Cytoscape (Wang et al., 2012). (B) Node degree distribution of the network in (A). (C) Number of shared edges between the networks predicted by Jump3, GENIE3 and CLR
+
+
+
+
+Several of the hub TFs (defined as TFs predicted as having >10 targets and listed in Table 5) have biologically relevant annotations: apart from the interferon responsive TFs Irf1 and Irf7, we find Hoxc6 (associated with cytomegalovirus infection) and cancer-associated TFs such as Egr1, Bmyc and Pbx2, reinforcing the deep connections of the immune response with cancer (de Visser et al., 2006). Quantitative evaluations of these results in terms of enrichment for known regulatory links are hampered by the absence of large-scale gold standards for human regulatory networks. The widely used TRANSFAC database (http://www.gene-regulation.com/pub/databases.html) only reports information for a handful of TFs included in this analysis, and the number of known targets among the selected 1000 genes is usually very low (one or two at maximum), precluding a systematic enrichment analysis. The human homologues of three hub TFs (Egr1, Bmyc and Irf1) were assayed using ChIP-Seq by the ENCODE consortium (The ENCODE Project Consortium, 2012), providing a potentially much larger number of putative targets. An analysis of this data is reported in the Section 2 of the Supplementary Material and shows considerably higher recall for Jump3 (compared with GENIE3 and CLR) and a higher precision for two of the three TFs. Nevertheless, these numbers (only three TFs) are still very small for an enrichment analysis, which is in any case weakened by the data coming from a different organism in different experimental conditions.
+Table 5. Hubs of the predicted IFNγ networks
+
+Jump3	Bmyc (31), Egr1 (70), Egr4 (51), Hoxc6 (89), Irf1 (30) Irf7 (12), Mrg2 (22), Myod1 (21), Pbx2 (13), Sox13 (58)	
+GENIE3-lag	Dlx4(18), Egr1(25), Irf1 (18), Irf7 (139), Klf4 (46), Lhx2 (58), Lyl1 (34), Pou3f1 (27), Sox13 (11), Sp100 (35), Tcfec (15)	
+CLR-lag	Dlx4 (14), Egr1 (15), Irf7 (53), Klf4 (41), Lhx2 (27), Lyl1 (55), Mrg1 (14), Pou3f1 (38), Sp100 (32), Stat2 (20), Tcfec (33), Tlx2 (12)	
+For each TF, the number of predicted targets is indicated between parenthesis.
+
+
+
+4 Discussion
+Elucidating the topology of GRNs is a fundamental step towards our understanding of how a cell or an organism can respond to its environment. Despite years of concerted efforts by the computational biology community, this task is still far from complete and a unified framework for GRN inference remains elusive. Here, we presented Jump3, a novel approach to GRN inference, which attempts to combine the interpretability of model-based methods with the scalability of greedy, model-free methods, thus bridging the gap between the two main classes of GRN inference approaches. Experiments on simulated and synthetic data show that Jump3 is always competitive and often outperforms state-of-the-art GRN inference procedures, while an experiment on a real dataset shows its potential for biologically meaningful hypothesis generation. It has good scalability with respect to the number of genes and keeps its good performance when inferring large networks. From a modelling point of view, results show that Jump3 yields good predictions of promoter states and that, despite its simplicity, the on/off model is flexible enough to allow good fits of the data.
+
+While we believe that Jump3 is a step in the right direction, we also acknowledge that the complexity of gene regulation will pose a strict limit to the potential of GRN inference from expression data alone. A first limitation comes from the assumption that the messenger RNA level can be used as a proxy for the protein activity, which is often not correct (Vogel and Marcotte, 2012). A simple improvement of Jump3 would thus be the exploitation of protein data, which are becoming less rare gradually, to predict the target promoter states. Another important direction is the integration in GRN inference algorithms of complementary data, such as microRNA expression, chromatin, protein-protein interactions or microbiomes and some promising initial steps in this direction are being taken (e.g. Ellwanger et al., 2014; Greenfield et al., 2013). The probabilistic generative model underlying Jump3 would allow the incorporation of additional information in a natural way via a modification of the likelihood function, while the non-parametric tree-based approach would ensure the scalability of the whole procedure.
+
+Using the method on large networks with relatively few observations may incur co-linearity problems, i.e. genes that have very similar profiles leading to confounding factors in the inference. A simple fix to this would be to pre-process the data with some clustering algorithm; this would further increase scalability, at the cost of some interpretability.
+
+Ultimately, a major limitation for many studies in computational biology is the lack of systematic, large-scale gold standards on which to evaluate the models; this generalized fact reinforces the need for a tight coupling between experimental and theoretical research, and we hope that inference methods such as Jump3 could be useful in prioritizing experimental designs.
+
+Supplementary Material
+Supplementary Data
+ Acknowledgement
+We thank Peter Ghazal and Thorsten Forster for useful discussions on interferon gamma biology.
+
+Funding
+This work was supported by the European Research Council [grant number MLCS306999].
+
+Conflict of Interest: none declared.
+==== Refs
+References
+Alberts B.   (2008 ) Molecular Biology of the Cell .
+Garland Science , New York .
+Alon U.   (2006 ) An Introduction to Systems Biology: Design Principles of Biological Circuits .
+Chapman & Hall/CRC , London .
+Bansal M.  . (2006 ) Inference of gene regulatory networks and compound mode of action from time course gene expression profiles . Bioinformatics ,
+22 , 815 –822 .16418235 
+Bansal M.  . (2007 ) How to infer gene networks from expression profiles . Mol. Syst. Biol. ,
+3 , 78 .17299415 
+Blanc M.  . (2011 ) Host defense against viral infection involves interferon mediated down-regulation of sterol biosynthesis . PLoS Biol. ,
+9 , e1000598 .21408089 
+Breiman L.   (2001 ) Random forests . Mach. Learn. ,
+45 , 5 –32 .
+Cantone I.  . (2009 ) A yeast synthetic network for in vivo assessment of reverse-engineering and modeling approaches . Cell ,
+137 , 172 –181 .19327819 
+De Smet R. Marchal K.   (2010 ) Advantages and limitations of current network inference methods . Nat. Rev. Microbiol. ,
+8 , 717 –29 .20805835 
+de Visser K.E.  . (2006 ) Paradoxical roles of the immune system during cancer development . Nat. Rev. Cancer ,
+6 , 24 –37 .16397525 
+Ellwanger D.C.  . (2014 ) Large-scale modeling of condition-specific gene regulatory networks by information integration and inference . Nucleic Acids Res. ,
+42 , e166 .25294837 
+Faith J.J.  . (2007 ) Large-scale mapping and validation of Escherichia coli transcriptional regulation from a compendium of expression profiles . PLoS Biol. ,
+5 , e8 .17214507 
+Gardiner C.W.   (1996 ) Handbook of Stochastic Methods .
+Springer , Berlin .
+Geurts P.  . (2006 ) Extremely randomized trees . Mach. Learn. ,
+36 , 3 –42 .
+Geurts P.  . (2009 ) Supervised learning with decision tree-based methods in computational and systems biology . Mol. BioSyst. ,
+5 , 1593 –1605 .20023720 
+Gray P.A.  . (2004 ) Mouse brain organization revealed through direct genome-scale TF expression analysis . Science ,
+306 , 2255 –2257 .15618518 
+Greenfield A.  . (2013 ) Robust data-driven incorporation of prior knowledge into the inference of dynamic regulatory networks . Bioinformatics ,
+29 , 1060 –1067 .23525069 
+Greenfield A.  . (2010 ) DREAM4: combining genetic and dynamic information to identify biological networks and dynamical models . PLoS One ,
+5 , e13397 .21049040 
+Huynh-Thu V.A.   (2012 ) Machine learning-based feature ranking: statistical interpretation and gene network inference .
+PhD thesis, University of Liège, Belgium .
+Huynh-Thu V.A.  . (2010 ) Inferring regulatory networks from expression data using tree-based methods . PLoS One ,
+5 , e12776 .20927193 
+Lèbre S.   (2009 ) Inferring dynamic bayesian networks with low order independencies . Stat. Appl. Genet. Mol. Biol. ,
+8 , Article 9 .19222392 
+Marbach D.  . (2012 ) Wisdom of crowds for robust gene network inference . Nat. Methods ,
+9 , 796 –804 .22796662 
+Margolin A.A.  . (2006 ) ARACNE: an algorithm for the reconstruction of gene regulatory networks in a mammalian cellular context . BMC Bioinformatics ,
+7 (Suppl. 1 ), S7 .16723010 
+Ocone A.  . (2013 ) Hybrid regulatory models: a statistically tractable approach to model regulatory network dynamics . Bioinformatics ,
+29 , 910 –916 .23407360 
+Opper M.   (2010 ) Approximate inference in continuous time Gaussian-jump processes . In: Lafferty J.D.   (eds). Advances in Neural Information Processing Systems (NIPS 2010) ,
+vol. 23 , pp. 1831 –1839 , Curran Associates, Inc .
+Penfold C.A. Wild D.L.   (2011 ) How to infer gene networks from expression profiles, revisited . Interface Focus ,
+1 , 857 –870 .23226586 
+Prill R.J.  . (2010 ) Towards a rigorous assessment of systems biology models: the DREAM3 challenges . PLoS One ,
+5 , e9202 .20186320 
+Ptashne M. Gann A.   (2002 ) Genes and Signals .
+Cold Harbor Spring Laboratory Press , New York .
+The ENCODE Project Consortium  (2012 ) An integrated encyclopedia of DNA elements in the human genome . Nature ,
+489 , 57 –74 .22955616 
+Vogel C. Marcotte E.M.   (2012 ) Insights into the regulation of protein abundance from proteomic and transcriptomic analyses . Nat. Rev. Genet. ,
+13 , 227 –232 .22411467 
+Wang P.L.  . (2012 ) A travel guide to cytoscape plugins . Nat. Methods ,
+9 , 1069 –1076 .23132118

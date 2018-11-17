@@ -1,0 +1,209 @@
+
+==== Front
+BioinformaticsbioinformaticsbioinfoBioinformatics1367-48031367-4811Oxford University Press 10.1093/bioinformatics/btq677btq677Original PapersSequence AnalysisSlideSort: all pairs similarity search for short reads Shimizu Kana 1*Tsuda Koji 121Computational Biology Research Center, National Institute of Advanced Industrial Science and Technology (AIST) and 2ERATO Minato Project, Japan Science and Technology Agency, Japan* To whom correspondence should be addressed.Associate Editor: Alex Bateman
+
+15 2 2011 9 12 2010 9 12 2010 27 4 464 470 19 8 2010 27 10 2010 3 12 2010 © The Author(s) 2010. Published by Oxford University Press.2010This is an Open Access article distributed under the terms of the Creative Commons Attribution Non-Commercial License (http://creativecommons.org/licenses/by-nc/2.5), which permits unrestricted non-commercial use, distribution, and reproduction in any medium, provided the original work is properly cited.Motivation: Recent progress in DNA sequencing technologies calls for fast and accurate algorithms that can evaluate sequence similarity for a huge amount of short reads. Searching similar pairs from a string pool is a fundamental process of de novo genome assembly, genome-wide alignment and other important analyses.
+
+Results: In this study, we designed and implemented an exact algorithm SlideSort that finds all similar pairs from a string pool in terms of edit distance. Using an efficient pattern growth algorithm, SlideSort discovers chains of common k-mers to narrow down the search. Compared to existing methods based on single k-mers, our method is more effective in reducing the number of edit distance calculations. In comparison to backtracking methods such as BWA, our method is much faster in finding remote matches, scaling easily to tens of millions of sequences. Our software has an additional function of single link clustering, which is useful in summarizing short reads for further processing.
+
+Availability: Executable binary files and C++ libraries are available at http://www.cbrc.jp/~shimizu/slidesort/ for Linux and Windows.
+
+Contact: slidesort@m.aist.go.jp; shimizu-kana@aist.go.jp
+
+Supplementary information: Supplementary data are available at Bioinformatics online.
+==== Body
+1 INTRODUCTION
+Due to the dramatic improvement of DNA sequencing, it is required to evaluate sequence similarities among a huge amount of fragment sequences such as short reads. We address the problem of enumerating all neighbor pairs in a large string pool in terms of edit distance, where the cost of insertion, deletion and substitution is one. Namely, given a set of n sequences of equal length ℓ, s1,…, sn, the task is to find all pairs whose edit distance is at most d,
+ (1)  
+It is conventionally called all pairs similarity search.
+
+All pairs search appears in important biological tasks. For example, it is required in finding seed matches in all pairs alignment necessary in sequence clustering (Abouelhoda et al., 2004). Such alignments can then be used to detect and correct errors in short reads (Qu et al., 2009). In the first step of de novo genome assembly (Simpson et al., 2009; Zerbino and Birney, 2008), short reads are decomposed to k-mers, and suffix–prefix matches of length k − 1 are detected. In most cases, exact matches are employed due to time constraint. Using approximate matches, the length of contigs can be extended, which leads to final assembly of better quality. This problem reduces to all pairs similarity search by collecting all k − 1 prefixes and suffixes into a sequence pool. From the output, only prefix–suffix pairs are reported.
+
+Basically, most popular methods solve the search problem by either of the following two approaches or a combination of them. (i) Finding a common k-mer and verify the match (Lipman and Pearson, 1985; Simpson et al., 2009; Warren et al., 2007; Weese et al., 2009; Zerbino and Birney, 2008). (ii) Backtracking in an index structure (i.e. suffix array and FM-index) (Langmead et al., 2009; Li and Durbin, 2009; Li et al., 2009; Rajasekaran et al., 2005; Sagot, 1998; Trapnell et al., 2009). The first type finds common k-mers in strings (i.e. seed match) and verify if two strings sharing the k-mer are neighbors indeed by extending the match with dynamic programming. It works perfectly well when the string is long enough. However, when strings are short and the threshold d is large, the length of shared k-mers falls so short that too many candidate pairs have to be verified. The second type stores the strings into an index structure, most commonly a suffix array. Then, similar strings are found by traversing nodes of the corresponding suffix tree. This approach works fine if d is small, e.g. d ≤ 2, and employed in state-of-the-art short read mapping tools such as BWA (Li and Durbin, 2009), bowtie (Langmead et al., 2009) and SOAP2 (Li et al., 2009). However, it becomes rapidly infeasible as d grows larger, mainly because the complexity is exponential to d and no effective pruning is known. ELAND and SeqMap (Jiang and Wong, 2008) decompose sequences into blocks and use multiple indices to store all k-concatenations of blocks. Obviously, it requires much more memory compared with BWA, which would be problematic in many scenarios. Multisorting (Uno, 2008) uses multiple substring matches to narrow down the search effectively, but it can find neighbors in terms of Hamming distance only.
+
+Our method termed SlideSort finds a chain of common substrings by an efficient pattern growth algorithm, which has been successfully applied in data mining tasks such as itemset mining (Han et al., 2004). A pattern corresponds to a sequence of substrings. The space of all patterns is organized as a tree and systematically traversed. Our method does not rely on any index structure to avoid storage overhead. Instead, radix sort is employed to find equivalent strings during pattern growth. To demonstrate the correctness of our algorithm, the existence of a common substring chain in any neighbor pair is proved first. In addition, we deliberately avoid reporting the same pair multiple times by duplication checking. As a result, our method scales easily to 10 million sequences and is much faster than seed matching methods and suffix arrays for short sequences and large radius.
+
+The rest of this article is organized as follows. Section 2 introduces our algorithm. In Section 3, results of computational experiments are presented. Section 4 concludes the article.
+
+2 METHOD
+Two similar strings share common substrings in series. Therefore, we can detect similar strings by detecting chains of common strings systematically. Before proceeding to the algorithm, let us describe fundamental properties first. Divide the interval 1,…, ℓ into b blocks of arbitrary length w1,…, wb, ∑i=1b wi = ℓ. The starting position of each block is defined as qi = 1 + ∑j=1i−1 wj. The alphabet is denoted as Σ. We assume that each string in the database {si}i=1n consists of ℓ letters, si ∈ |Σ|ℓ. Given two strings s, t, s = t holds if all letters are identical. The substring from positions i to j is described as s[i, j].
+
+A pattern of length k is defined as a sequence of strings and block indices,
+  
+where xi ∈ |Σ|wyi, 1 ≤ y1 < y2,…, < yk ≤ b. Pattern X matches to string si with offset {p = (p1,…, pk), if
+  
+All occurrences of X in the database are denoted as
+  
+For convenience, an index set I(X) is defined as the set of sequences appearing in C(X). The number of sequences in I(X) is defined as |I(X)|.
+
+The relationship between neighbor pairs and patterns are characterized by the following theorem.
+
+Theorem 1.
+If si and sj of equal length ℓ are neighbors, i.e. EditDist(si, sj) ≤ d, i < j, there exists a pattern X of length b − d such that X matches si with zero offset (p1 = p2 = … = pb−d = 0) and matches sj with bounded offset −⌊d/2⌋ ≤ pk ≤ ⌊d/2⌋, k = 1,…, b − d.
+
+Proof.
+There are multiple possible alignments of si and sj. An alignment is characterized by the number of matches m, that of mismatches f, that of gaps gi in si and that of gaps gj in sj.The length of si is equal to m + f + gj and that of sj is m + f + gi, because any letter in si is aligned to either a letter in sj or gap symbol in sj and vice versa. Thus, we obtain gi = gj ≤ ⌊d/2⌋ by taking into account that the maximum number of gaps does not exceed d. Therefore, an aligned position of any letters is within a bound of ⌊d/2⌋ letters from its original position.
+
+Let us divide si into b blocks of length w1,…, wb. Since the number of mismatches are at most d, at least b − d blocks match exactly with their counterparts in sj in any alignment. Also, since aligned positions are bound within ⌊d/2⌋ from their original positions, the matching counterpart of any block of si can be found in sj within offset between −⌊d/2⌋ and ⌊d/2⌋. ▪
+
+Figure 1 illustrates an example of patterns with b = 5, d = 3. This theorem implies that any neighbor pair has a chain of b − d common blocks and the corresponding blocks lie close to each other. It serves as a foundation of our algorithm presented later on.
+Fig. 1. An example pattern for block size 5 and edit-distance threshold 3. si matches to X with no offset in the first block and the third block. sj matches to X with no offset in the first block but with −1 offset in the third block.
+
+
+
+2.1 Pattern growth
+In our algorithm, all patterns X of |I(X)| ≥ 2 are enumerated by a recursive pattern growth algorithm. In a pattern growth algorithm, a pattern tree is constructed, where each node corresponds to a pattern (Fig. 2). Nodes at depth k contain patterns of length k.
+Fig. 2. Pattern growth and pruning process of the proposed method. Patterns are enumerated by traversing the tree in depth-first manner. In each node, new elements are generated by sorting substrings in sequence pool (‘ATA’, ‘TAT’, ‘TTA’ for y1 = 1). Useless patterns (‘TTA’ in this case) are removed. Remaining elements are added to yield new patterns. This process is executed by recursive call until the pattern size reaches b − d.
+
+
+
+At first, patterns of length 1 are generated as follows. For each block y1 = 1,…, d + 1, a string pool is made by collecting substring of {si}i=1n starting at qy1 − ⌊d/2⌋,…, qy1+⌊d/2⌋. Applying radix sort to the string pool and scanning through the sorted result, repetition of equivalent strings can be detected (Fig. 3). Each pattern of length 1, denoted as X1, is constructed as a combination of the repeated string x1 and y1,
+  
+At the same time, all occurrences C(X1) are recorded. If si matches the same pattern X1 by several different offsets, only the smallest offset is recorded. They form the nodes corresponding to depth 1 of the pattern tree.
+Fig. 3. Discovery of equivalent strings by radix sort.
+
+
+
+Given a pattern Xt of length t, its children in the pattern tree are generated similarly as follows. For each yt+1 = yt + 1,…, d + t + 1, a string pool is made by collecting substrings of I(Xt) starting at qyt+1 − ⌊d/2⌋,…, qyt+1 + ⌊d/2⌋. Because the string pool is made from the occurrence set only, the size of the pool decreases sharply as a pattern grows. By sorting and scanning, a next string xt+1 is identified and the pattern is extended as
+  
+and the occurrences C(Xt) are updated to C(Xt+1) as well.
+
+To avoid generation of useless patterns, the pattern tree is pruned as soon as the support falls below 2. Also, the tree is pruned if there is no string in I(X) that matches X with zero offset. As pattern growth proceeds in a depth-first manner, memory is reserved as a pattern is extended, and then immediately released as the pattern is contracted to visit another branch. This dynamic memory management keeps peak memory usage rather small.
+
+2.2 From patterns to pairs
+As implied in Theorem 1, every neighbor pair (Fig. 1) appears in index set I(X) of at least one pattern. Since one of the pair must have zero offset, the set of eligible pairs is described as
+  
+Since not all members of PX correspond to neighbors, we have to verify if they are neighbors by actual edit-distance calculation.
+
+A problem here is that the same pair (i, j) possibly appears in the index set of many different patterns. It is also possible that pair (i, j) in the same index set is derived from different offsets. In most applications, it is desirable to ensure that no pair is reported twice. The straightforward solution of the problem is to check if a new pair is previously reported by storing all pairs, which requires huge amount of memory. We propose an alternative solution that rejects non-canonical pairs without using any extra memory as follows.
+
+A match of si and sj can occur in various ways, each of which can be described as the tuple (y, p), where y = y1,…, yb−d describe the blocks in the pattern and p is the offset with which the pattern matches sj. We define the canonical match as the one with lexicographically smallest y and p, where priority is given to y. For example, consider the case si = AATT, sj = ATAT, d = 2 and all block widths set to 1. There are 10 different (y, p) pairs as shown in Figure 4, where matching residues are shown in red squares. In this case, (1) is canonical. Among them, the matches with overlapping squares do not have correct alignment. We do not exclude such pairs to avoid an extra run of dynamic programming.
+Fig. 4. All (y, p) of si = AATT, sj = ATAT. Matching residues are shown in red squares. Since the red squares overlap in (6) and (10), they do not correspond to correct alignment.
+
+
+
+To judge if a given match (y, p) is canonical or not, it is sufficient to check if there exists another match that is lexicographically smaller. More precisely, the match represented by y, p is not canonical, iff there exists a block 1 ≤ z ≤ max(y), z ∉ y and an offset −⌊d/2⌋ ≤ r ≤ ⌊d/2⌋ such that
+ (2)  
+This canonicity check can be done in O(dℓ) time.
+
+Pseudocode of the overall algorithm is shown in Algorithm 1. In line 18, it suffices to compute diagonal stripe of width 2d + 1 of DP matrix. Thus, the distance calculation is performed in O(dℓ) time.
+
+2.3 Remarks
+With small modification, SlideSort can deal with gap opening and gap extension penalties. Define the gap open and extension cost as γo and γe, respectively. Denote the number of mismatches, gap opens and gap extensions as f, go and ge, respectively. Then our all pairs similarity search problem is reformulated as finding pairs such that f + goγo + geγe ≤ d. Denote the number of gaps in each sequence as gi and gj. Then, ge = gi + gj and go ≥ 2 (if ge ≠ 0), go = 0 (if ge = 0) by definition. When ge ≠ 0, we have (gi + gj) γe ≤ d − 2 γo. Since the lengths of two sequences are equal, the number of gaps is also equal, gi = gj, leading to the following inequality,
+  
+Therefore, the offsets pk, for k = 1,…, b − d, are bounded by
+ (3)  
+When ge = 0, we can find all pairs by zero offsets, hence the offset range (3) covers this case as well. Notice that the block size b must be larger than max(d, ⌊d/(γo + γe)⌋). This modification is effective to reduce both computation time and memory space when γo and γe are larger than substitution cost.
+
+It is worthwhile to notice that SlideSort can handle sequences of slightly different lengths without any essential modification. See a Supplementary Method in Supplementary file 1 for details.
+
+2.4 Complexity
+Denote by σ = |Σ| the alphabet size. Space complexity of SlideSort is O((b − d)dn log n + nℓlogσ), because it requires an pointer array to describe the pattern tree, and the original strings must be retained. Denote by m the number of all pairs included in the index set I(X). Time complexity of SlideSort is O(bd−1 db−d ℓn + mdℓ), in which the first part is for sorting and the latter part is for edit-distance calculations. The time complexity depends on the effectiveness of pruning through m. The worst case of the latter part becomes O(n2 dℓ) when all the input short reads are identical. In most cases, however, short reads are quite diverse and m is expected to scale much better than O(n2).
+
+The all pairs similarity search problem can be solved by finding approximate non-tandem repeats in the concatenated text of length nℓ. An enhanced suffix array can solve it with O(ℓd+1 σdn) time and O(n logn + nℓlogσ) space (Abouelhoda et al., 2004). This time complexity is essentially achieved by producing all variants within distance d of all sequences and finding identical pairs. The difference is that the time complexity of the suffix array depends on the alphabet size and that not of SlideSort. Thus, SlideSort can be applied to large alphabets (i.e. proteins) as well.
+
+3 EXPERIMENTS
+From NCBI Sequence Read Archive (http://www.ncbi.nlm.nih.gov/sra/), we obtained two datasets: paired-end sequencing of Human HapMap (ERR001081) and whole genome shotgun bisulfite sequencing of the IMR90 cell line (SRR020262). They will be referred to as dataset 1 and 2, respectively. Sequence length of dataset 1 is 51 and that of dataset 2 is 87. Both datasets were generated by Illumina Genome Analyzer II. Reads that do not include ‘N’ were selected from the top of the original fastq files. Our algorithm was implemented by C++ and compiled by g++. All the experiments were done on a Linux PC with Intel Xeon X5570 (2.93 GHz) and 32 GB RAM. Only a single core is used in all experiments.
+
+
+
+As competitors, BWA (Li and Durbin, 2009) and SeqMap (Jiang and Wong, 2008) are selected among many alternatives, because the two methods represent two totally different methodologies, backtracking and block combination. BWA is among the best methods using index backtracking, while SeqMap takes an ELAND-like methodology of using multiple indexes for all block combinations. SlideSort is also compared to the naive approach that calculates edit distances of all pairs. BWA and SeqMap are applied to all pairs similarity search by creating an index from all short reads and querying it with the same set of reads.
+
+Notice that both BWA and SeqMap are not originally designed for all pairs similarity search but for read mapping, which requires a larger search space. Although fair comparison is difficult between tools of different purposes, we used mapping tools as competitors, because no tool is widely available for all pairs similarity search, to our knowledge.
+
+For our method, the number b of blocks has to be determined. In the following experiments, we set b relative to the distance threshold d as b = d + k. Here, k corresponds to the pattern size. In the following experiments, we tried k = 1,…, 5 and reported the best result.
+
+The number of neighbor pairs for both datasets are shown in Supplementary Figure S1. We confirmed that both SlideSort and the naive approach reported exactly the same number of neighbor pairs, which ensures correctness of our implementation of SlideSort.
+
+3.1 Computation time and memory usage
+Figure 5 plots computation time against the distance threshold d. SlideSort is consistently faster in all configurations. As the number of sequences grows and the distance threshold is increased, the difference from BWA and SeqMap becomes increasingly evident. Not all results are obtained, because of the 30 GB memory limit and 300 000 s time limit. Figure 6 compares peak memory usage of SlideSort, SeqMap and BWA. We separately measured the memory usage of the indexing step and searching step for BWA, because BWA is designed to execute those steps separately. The peak memory of BWA for the search step is the smallest in most of the configurations, while that of SlideSort is comparable or slightly better than BWA's peak indexing memory. Detailed results for 100 000 short reads are shown in Table 1.
+Fig. 5. Computation time on the two short read datasets. Among the four methods, ‘naive’ represents the exhaustive distance calculation.
+
+
+Fig. 6. Memory usage on the two short read datasets. BWA's memory usage is separately evaluated for the indexing step (index) and the search step (search).
+
+
+Table 1. Computation time on 100 000 short reads
+
+	Dataset 1	Dataset 2	
+	SlideSort	BWA	SeqMap	Naive	SlideSort	BWA	SeqMap	Naive	
+		Index	Search				Index	Search			
+d = 1	0.2	2.34	3.25	7.68	8743.46	0.33	5.07	6.91	39.59	15 678	
+d = 3	0.85	2.37	562.63	205.26	23 796.1	1.84	5.09	1647.16	10 698.6	39 046.3	
+d = 5	6.56	2.19	19 697.67	93 115.2	38 179.5	5.56	5.08	12 876.88	> 300 000	65 244.6	
+
+
+
+BWA is most efficient in space complexity, because its index size does not depend on the distance threshold. Instead, BWA's time complexity rapidly deteriorates as the edit-distance threshold grows due to explosion of the number of traversed nodes in backtracking. In contrast, SeqMap indexes and hashes all the combination of key blocks, which leads to huge memory usage. SlideSort is similar to SeqMap in that it considers all block combinations, but is much more memory efficient. The difference is that SlideSort is an indexing free method, which dynamically generates the pattern tree by depth-first traversal. It allows us to maintain only necessary parts of tree in memory.
+
+3.2 Effect of pattern size
+Figure 7 investigates the influence of pattern size k on the efficiency. Except for d = 1, the best setting was around k = 2–4. Our method k = 1 roughly corresponds to the single seed approach, so this result suggests the effectiveness of using chains. Overall, the computation time was not too sensitive to the choice of k.
+Fig. 7. Comparison of performance of the proposed method with different k evaluated on 1 000 000 short reads.
+
+
+
+3.3 Comparison to single seed
+Our algorithm employs a chain of common substrings to narrow down the search. Compared with the single seed approach that uses a k-mer to derive candidate pairs, the total length of substrings can be much larger than the k-mer without losing any neighbors. It yields higher specificity leading to a smaller number of candidate pairs. Instead of a chain, one can detect multiple k-mers and verify those pairs containing multiple matches (Burkhardt and Kärkkäinen, 2002). However, this approach has lower specificity in comparison to the chain of the same total length, because the matching positions of each elements of the chain are strictly localized due to Theorem 1.
+
+Figure 8 compares the number of candidate pairs generated by our method and single seed (k-mer in plot). It corresponds to the number of edit-distance calculations. We have two variations of the single seed method: ‘k-mer/nonredundant’ stores previously reported pairs in memory, and does not include previously reported pairs in candidates. ‘k-mer/redundant’ does not use additional memory but counts the same pair multiple times. Here we set the length of the k-mer to ℓ/d so that no neighbors are lost. In the plot, one can see a significant reduction in the number of candidate pairs in our algorithm. Notice that the number of candidate pairs is shown in log scale. In our method, the number of candidates is minimum at the largest pattern size, because the total length of substrings is maximized and specificity becomes optimal. However, since the search space of patterns is expanded, the total computation time is not optimal in this case.
+Fig. 8. Comparison of number of candidate pairs. The evaluations were done on 100 000 short reads. The proposed method was examined with k = 1,…, 5. ‘Neighbor pairs’ represent the actual number of neighbor pairs in data. ‘k-mer/nonredundant’ and ‘k-mer/redundant’ represent two variants of the single seed method (see text).
+
+
+
+3.4 Clustering analysis of short reads
+A main application of SlideSort is hierarchical sequence clustering, which would be used in correcting errors in short reads and preprocessing for metagenome mapping, for example. SlideSort provides an undirected graph G, where vertices represent short reads and weighted edges represent edit distances of neighbor pairs. Among hierarchical clustering algorithms, single link is most scalable (Manning et al., 2008). Since the dendrogram of single link clustering is isomorphic to the minimum spanning tree (Gower and Ross, 1969), one can perform single link clustering via minimum spanning trees (MSTs) construction by the Kruskal or Prim algorithm (Kruskal, 1956; Prim, 1957).
+
+Since storing all edges can require a prohibitive amount of memory, we used a well-known online algorithm for building MSTs (Tarjan, 1983). It creates MSTs from a stream of edges, discarding unnecessary edges along the way. It essentially maintains all cycle-free connected components and, if a cycle is made by a new edge, it removes the heaviest edge from the cycle. In our experiment, the additional computation time for finding MSTs was trivially small compared with that of SlideSort finding similar pairs (Table 2). Figure 9 visualizes largest MSTs found in 10 000 000 short reads of dataset 2 with edit-distance threshold 3 by the 3D visualization tool Walrus (http://www.caida.org/tools/visualization/walrus/).
+Fig. 9. Visualization of large MSTs from a neighbour graph of 10 000 000 short reads with edit-distance threshold 3. The left graph shows 360 MSTs of 112 995 nodes, each of which consists of more than 100 nodes. The right graph focuses on the largest MST that consists of 6990 nodes. It is straightforward to obtain the dendrograms of single link clustering from these MSTs.
+
+
+Table 2. Comparison of computation time of searching pairs and finding MSTs for two types of short read datasets with edit-distance threshold 3
+
+Number of reads	Dataset 1	Dataset 2	
+	Searching pairs only (s)	Finding MSTs (s)	Searching pairs only (s)	Finding MSTs (s)	
+10 000	0.08	0.00	0.06	0.00	
+100 000	0.85	0.08	1.84	0.01	
+1 000 000	23.08	1.08	31.34	2.06	
+10 000 000	495.15	17.69	554.09	5.61	
+
+
+
+4 CONCLUSION
+In this study, we developed a novel method that enumerates all similar pairs from a string pool in terms of edit distance. The proposed method is based on a pattern growth algorithm that can effectively narrow down the search by finding chains of common k-mers. Using deliberate duplication checks, the number of edit distance calculations is reduced as much as possible. SlideSort was evaluated on large datasets of short reads. As a result, it was about 10–3000 times faster than other index-based methods. All these results demonstrate practical merits of SlideSort.
+
+One naturally arising question is if SlideSort can be used for mapping. In fact, it is possible by storing the pattern tree (Fig. 2) in memory, and using it as an index structure. However, the index would cost too much memory for genome-scale data. What we learned from this study is that all pairs similarity search is essentially different from mapping in that one can employ pruning and dynamic memory management. Thus, all pairs similarity search is not a subproblem of mapping and deserves separate treatment.
+
+In future work, we would like to implement SlideSort with parallel computation techniques. Recent progress in hardware technology enables end-users to use many types of parallel computing scheme such as SSE and GPGPU. SlideSort would be further improved by using these technologies.
+
+Supplementary Material
+Supplementary Data
+ ACKNOWLEDGEMENT
+The authors thank Kiyoshi Asai, Hisanori Kiryu, Takeaki Uno, Tetsuo Shibuya, Yasuo Tabei and Martin Frith for their fruitful discussions.
+
+Funding: Grant-in-Aid for Young Scientists (22700319, 21680025) by JSPS; FIRST program of the Japan Society for the Promotion of Science in part.
+
+Conflict of Interest: none declared.
+==== Refs
+REFERENCES
+Abouelhoda M.    Replacing suffix trees with enhanced suffix arrays J. Discrete Algorithms 2004 2 53 86 
+Burkhardt S.  Kärkkäinen J.   One-gapped q-gram filters for levenshtein distance Proceedings of the 13th Symposium on Combinatorial Pattern Matching (CPM'f02) 2002 2373 Berlin, Germany Springer 225 234 of Lecture Notes in Computer Science  
+Gower J.  Ross G.   Minimum spanning trees and single-linkage cluster analysis Appl. Stat. 1969 18 54 64 
+Han J.    Mining frequent patterns without candidate generation Data Min. Knowl. Discov. 2004 8 53 87 
+Jiang H.  Wong W.H.   Seqmap: mapping massive amount of oligonucleotides to the genome Bioinformatics 2008 24 2395 2396 18697769 
+Kruskal J.B.   On the shortest spanning subtree of a graph and the traveling salesman problem Proc. Am. Math. Soc. 1956 7 48 50 
+Langmead B.    Ultrafast and memory-efficient alignment of short dna sequences to the human genome Genome Biol. 2009 10 R25 19261174 
+Li H.  Durbin R.   Fast and accurate short read alignment with burrows-wheeler transform Bioinformatics 2009 25 1754 1760 19451168 
+Li R.    Soap2: an improved ultrafast tool for short read alignment Bioinformatics 2009 25 1966 1967 19497933 
+Lipman D.J.  Pearson W.R.   Rapid and sensitive protein similarity searches Science 1985 227 1435 1441 2983426 
+Manning C.    Introduction to Information Retrieval. 2008 Cambridge, UK Cambridge University Press 
+Prim R.   Shortest connection networks and some generalizations Bell Syst. Tech. J. 1957 26 1389 1401 
+Qu W.    Efficient frequency-based de novo short-read clustering for error trimming in next-generation sequencing Genome Res. 2009 19 1309 1315 19439514 
+Rajasekaran S.    High-performance exact algorithms for motif search J. Clin. Monit. Comput. 2005 19 319 328 16328946 
+Sagot M.-F.   Lucchesi C.L.  Moura A.V.   Spelling approximate repeated or common motifs using a suffix tree LATIN '98: Theoretical Informatics, Third Latin American Symposium 1998 1380 Berlin, Germany Springer 374 390 of Lecture Notes in Computer Science  
+Simpson J.T.    Abyss: a parallel assembler for short read sequence data Genome Res. 2009 19 1117 1123 19251739 
+Tarjan R.   Data Structures and Network Algorithms Society for Industrial and Applied Mathematics (SIAM) 1983 Philadelphia, USA 
+Trapnell C.    Tophat: discovering splice junctions with rna-seq Bioinformatics 2009 25 1105 1111 19289445 
+Uno T.   An efficient algorithm for finding similar short substrings from large scale string data Proceedings of the 12th Pacific-Asia Conference on Advances in Knowledge Discovery and Data Mining (PAKDD'08) 2008 5012 Berlin, Germany Springer 345 356 of Lecture Notes in Computer Science  
+Warren R.L.    Assembling millions of short dna sequences using ssake Bioinformatics 2007 23 500 501 17158514 
+Weese D.    Razers-fast read mapping with sensitivity control Genome Res. 2009 19 1646 1654 19592482 
+Zerbino D.R.  Birney E.   Velvet: algorithms for de novo short read assembly using de bruijn graphs Genome Res. 2008 18 821 829 18349386

@@ -1,0 +1,285 @@
+
+==== Front
+BioinformaticsbioinformaticsbioinfoBioinformatics1367-48031460-2059Oxford University Press 10.1093/bioinformatics/btp205btp205Ismb/Eccb 2009 Conference Proceedings June 27 to July 2, 2009, Stockholm, SwedenOriginal PapersBioinformatics of DiseaseModel-based clustering of array CGH data Shah Sohrab P. 12*Cheung K-John Jr2Johnson Nathalie A. 2Alain Guillaume 1Gascoyne Randy D. 2Horsman Douglas E. 2Ng Raymond T. 1Murphy Kevin P. 11Department of Computer Science, University of British Columbia, 201-2366 Main Mall Vancouver, BC V6T 1Z4 Canada and 2British Columbia Cancer Agency, 600 W 10th Ave Vancouver, BC V5Z 4E6 Canada*To whom correspondence should be addressed.15 6 2009 27 5 2009 27 5 2009 25 12 i30 i38 © 2009 The Author(s)2009This is an Open Access article distributed under the terms of the Creative Commons Attribution Non-Commercial License (http://creativecommons.org/licenses/by-nc/2.0/uk/) which permits unrestricted non-commercial use, distribution, and reproduction in any medium, provided the original work is properly cited.
+
+Motivation: Analysis of array comparative genomic hybridization (aCGH) data for recurrent DNA copy number alterations from a cohort of patients can yield distinct sets of molecular signatures or profiles. This can be due to the presence of heterogeneous cancer subtypes within a supposedly homogeneous population.
+
+Results: We propose a novel statistical method for automatically detecting such subtypes or clusters. Our approach is model based: each cluster is defined in terms of a sparse profile, which contains the locations of unusually frequent alterations. The profile is represented as a hidden Markov model. Samples are assigned to clusters based on their similarity to the cluster's profile. We simultaneously infer the cluster assignments and the cluster profiles using an expectation maximization-like algorithm. We show, using a realistic simulation study, that our method is significantly more accurate than standard clustering techniques. We then apply our method to two clinical datasets. In particular, we examine previously reported aCGH data from a cohort of 106 follicular lymphoma patients, and discover clusters that are known to correspond to clinically relevant subgroups. In addition, we examine a cohort of 92 diffuse large B-cell lymphoma patients, and discover previously unreported clusters of biological interest which have inspired followup clinical research on an independent cohort.
+
+Availability: Software and synthetic datasets are available at http://www.cs.ubc.ca/∼sshah/acgh as part of the CNA-HMMer package.
+
+Contact: sshah@bccrc.ca
+
+Supplementary information: Supplementary data are available at Bioinformatics online.
+==== Body
+1 INTRODUCTION
+Copy number alterations (CNA) are structural variations expressed in the form of DNA copy number differences at a particular region in the genome. The search for ‘driver’ CNAs in genetic material derived from cancerous tissues is a major goal in diagnostic and cytogenetic cancer research (Aguirre et al., 2004; Chin and Gray, 2008; Michels et al., 2007; Tonon et al., 2005). Putative driver CNAs are genomic amplifications or deletions ranging in size from a few kilobases to whole chromosome arms that are recurrent in a larger than expected proportion of patients. Their detection provides candidate genetic markers that may play a role in tumorigenesis and/or have clinicopathologic significance. In contrast, ‘passenger’ CNAs arise during the evolution of the tumor and may be present due to genomic instability or other mechanisms. In the context of defining the driver CNAs, passenger CNAs represent (often ubiquitous) ‘biological’ noise that might obscure driver signals. Using high-resolution array comparative genomic hybridization (aCGH) (Pinkel and Albertson, 2005), data consisting of tens to hundreds of thousands of probes, putative driver CNAs can be detected by identifying the subset of probes they span using a number of algorithmic and statistical tools (Diskin et al., 2006; Klijn et al., 2008; Rouveirol et al., 2006; Shah et al., 2007). These analyses lead to a molecular profile of recurrent CNAs that help define the molecular characteristics of the disease.
+
+A challenging phenomenon is that, frequently, patient cohorts exhibit heterogeneity in their molecular profiles. This has been demonstrated in breast (Perou et al., 2000), ovarian (Khalique et al., 2007) and prostate cancers, as well as lymphomas (Cheung et al., 2008; Höglund et al., 2004), suggesting that the patients should be stratified into molecular subtypes, where the patients within a group share a common group-specific driver CNA profiles. This concept has been successfully applied many times over using gene expression data (Perou et al., 2000; Wright et al., 2003), however it has been relatively under-studied in aCGH data.
+
+Considering a cohort of patients as a composite of a fixed set of molecular subtypes has distinct advantages when determining recurrent CNAs. By grouping or clustering the patients, recurrent CNAs that might otherwise go undetected can be revealed. This approach has the potential of determining CNAs that co-occur within a subtype and CNAs that are mutually exclusive between subtypes. Moreover, groups of patients can be assessed for distinct clinical outcomes. Molecular subtypes often correlate with clinical outcomes and in fact can, once identified, be considered as distinct disease entities (Sorlie, 2004) with different prognoses and/or response to therapy.
+
+Recent discovery of clinically relevant molecular subtypes by aCGH (Chin et al., 2007; Idbaih et al., 2008) suggest that the inventory of CNA-derived molecular subtypes in cancer is not complete. Large-scale projects such as the Cancer Genome Atlas Project (Collins and Barker, 2007) and the International Cancer Genome Consortium (ICGC: http://www.icgc.org) are now generating genomic array datasets from tumors from hundreds of patients for specific cancer types, thereby providing excellent potential for the discovery of new CNA-derived subtypes. In order to take full advantage of these data, robust and accurate computational algorithms for discovering molecular subgroups must be developed to keep pace with the data generation.
+
+In this article, we propose an approach to this problem based on a mixture of HMMs (hidden Markov models); we call our approach HMM-Mix. This extends our previous work (Shah et al., 2006, 2007) by defining multiple HMMs, one per cluster and automatically assigning samples to clusters while simultaneously inferring the profile of each cluster. Although the profiles are defined in terms of ‘called’ data (i.e. each location is classified as a loss, a gain or neutral/ no change), the model works directly with the raw aCGH data, and can recall ambiguous data in the context of the cluster to which it is assigned. This increases the statistical power of our method to detect shared, but subtle, CNAs that may be lost by methods that require discretization of the data as a preprocessing step, as shown in our previous work (Shah et al., 2007) and by (Klijn et al., 2008).
+
+In a simulation study, with realistic data, we show how our method is more accurate than other clustering methods, including hierarchical clustering (van Wieringen and van de Wiel, 2008) and K-medoids (KM) (an approach not previously applied to data of this kind). More importantly, we show how HMM-Mix reveals clinically relevant subgroups in data derived from a cohort of 106 follicular lymphoma (FL) patients, originally reported in Cheung et al. (2008), and reveals previously unreported patterns of alteration in a cohort of 92 diffuse large B-cell lymphoma (DLBCL) patients (Johnson et al., 2008).
+
+2 METHODS
+We first describe our probabilistic model, and then how we perform inference in this model. We also describe three other approaches against which we compare our method: a simple K-medoids method (WKM) a weighted K-medoids method, and a previously described hierarchical clustering algorithm designed for aCGH (van Wieringen and van de Wiel, 2008).
+
+2.1 The HMM-Mix model
+We represent the aCGH logratios as Ytp∈ℝ for each probe t∈(1,…, T) in the array and for each patient p∈(1,…, P). Each probe maps to unique genomic coordinates and is positionally ordered along the chromosomes. Y1:P1:T represents the full data matrix. For each datapoint, we assume there is a discrete mapping from Y1:P1:T→Z1:P1:T where Zpt∈k and k is a discrete copy number state ∈{L, N, G} representing loss, neutral and gain.
+
+The HMM-Mix model is a probabilistic generative model of Y1:P1:T. We illustrate our conditional independence assumptions using a graphical model in Figure 1, and we define all the conditional distributions in Figure 2. See also Table 1 for a summary of the notation.
+Fig. 1. Proposed HMM-Mix model for clustering aCGH data, represented as a directed graphical model (Gilks et al., 1996). Shaded nodes are observed/fixed, unshaded nodes are hidden (unknown). The two boxes represent repetition over patients and groups. Ytp∈ℝ is the observed aCGH logratio at probe t in patient p. Ztp∈{L, N, G} is the discrete state, representing whether probe t is a loss, neutral or gain. Given Ztp=k, Ytp is assumed to be sampled from a class conditional Student-t distribution with parameters μpk, λpk and νk. Gp∈{1,…, G} is the group that patient p belongs to, which is sampled from a Multinomial with parameter πG. θtg is the Multinomial parameter over Ztp, which is sampled from a Dirichlet with parameter αMtg, where Mgt∈{1,…, C} represents the state of the sparse profile for probe t in group g. Ag is the transition matrix for the profile model. Conditional probability distributions are shown in Figure 2. Description of variables is given in Table 1.
+
+
+Fig. 2. List of conditional probability distributions of HMM-Mix.
+
+
+Table 1. Summary of variables
+
+Symbol	Meaning	
+Sk	Set of probability vectors of length k	
+T	Number of probes (measurements)	
+G	Number of groups (clusters)	
+P	Number of patients (samples)	
+t∈{1,…, T}	Probe location	
+g∈{1,…, G}	Group index	
+p∈{1,…, P}	Patient index	
+c∈{L, B, G}	State index	
+k∈{L, N, G}	Call index	
+Mtg∈{L, B, G}	State of profile	
+θtg∈S3	Distribution over calls	
+Ztp∈{L, N, G}	Called aberation	
+Ytp∈ℝ	Raw data (log ratios)	
+Gp∈{1,…, G}	Group assignment	
+πG∈SG	Prior over groups	
+Ag∈S3 × 3	Transition matrix	
+μkp∈ℝ	Mean of observations	
+λkp∈ℝ+	Precision of observations	
+νk∈{ℝ+	DOF for observations (fixed)	
+πM	Multinomial parameters (fixed)	
+αc, δG, δA	Dirichlet hyper-parameters (fixed)	
+ϕ=(mk, ηk, Sk, γk)k=13	Normal-Gamma hyper-parameters (fixed)	
+DOF=degrees of freedom.
+
+
+
+
+The model generates the data as follows. First we sample a group or cluster label for each patient, denoted Gp∈{1,…, G}, from a Multinomial with parameter πg. Here, G is the number of clusters (see below for how we choose this), and πg is the vector of mixing weights. Next, each group G generates a profile which is represented as a sequence of states, Mtg∈{L, B, G}, t=1 : T, representing loss, background or gain at probe t in the array. Probes which are labeled loss are expected to contain mostly losses; probes which are labeled gain are expected to contain mostly gains; probes which are labeled background are expected to contain whatever the background distribution of loss, gains and neutrals is. Thus, the non-background probes are the interesting ones.1 Since CNAs occur in runs (span contiguous sets of probes), we model correlation between consecutive locations using a first-order Markov chain on the Mtg variables. The transition matrix, Ag is a 3 × 3 matrix whereby Ag(i,j) represents p(Mtg=j|Mt−1g=i). We expect this matrix to have large elements on the diagonal encouraging self-transitions [which we model with a Dirichlet prior with parameters δA (see Fig. 1 and Table 1)], and thus runs of repeated states. Of course the quantities of Ag are unknown at run time and are estimated by fitting the model to the data (see Section 2.2). Therefore, the off-diagonal elements of the matrix, including for example the transitions {B→L, B→G, L→B,…}, are fully represented and estimated accordingly.
+
+Once we have generated a discrete profile for each group, we convert it into a distribution over calls. Specifically, state Mtg of the Markov chain ‘emits’ a probability vector θtg, representing a probability distribution over the ‘letters’ {L, N, G}, representing ‘called’ aCGH states. In other words, θtg represents the relative frequencies of calls we would expect at location t in group g. If Mtg=L, then θtg is sampled from a Dirichlet with parameters αL=(aL, 1, 1), which is biased toward the letter L (by setting aL≫1). Similarly, if Mtg=G, then θtg is sampled from a Dirichlet with parameters αG=(1, 1, aG), which is biased toward the letter G (by setting aG≫1). If Mtg=B, then θtg is set equal to θ0g, representing the overall background, which is shared across locations; θ0g is itself sampled from a Dirichlet with parameters αB=(1, aB, 1), which is biased toward the letter N (by setting aN≫1). Once we have generated the continuous profile for each group, θtg, we are able to generate data for each patient. We sample a call Ztp∈{L, N, G} from a Multinomial with parameter θtg. Here, it would be appropriate to model Zp1:T as a Markov chain to capture the spatial correlation in the data at the level of each patient. However, as shown in our previous work (Shah et al., 2007), this makes inference expensive since all the Z chains become coupled. Instead, we initialize each Zp1:T using Markov chains (see below) to capture the patient level spatial correlation and find that this is sufficient for our task of capturing the group-specific recurrent CNAs which are explicitly modeled as a Markov chain Mg1:T.
+
+Finally, we convert the discrete call into a continuous observation, Ytp∈ℝ, by sampling from a Student-t distribution; this is more robust to outliers than a Gaussian. Specifically, if Ztp=k, we use mean μkp, precision λkp and fixed degrees of freedom ν=3. (We fix the degrees of freedom to simplify the inference procedure; we have found that our results are reasonably robust to the value of ν.) Note that the parameters of the observation density are patient specific, but are shared across locations. The observation parameters μkp and λkp are sampled from a standard conjugate prior. Details on how we set the hyper-parameters are outlined in Shah et al. (2007).
+
+2.2 Inference
+Although the model was described in terms of Mtg generating θtg, which in turn generates the Ztp calls, it turns out to simplify inference if we analytically integrate out θtg. This is valid since θtg is just a nuisance parameter, i.e. it is not a variable we are interested in estimating. (Several other variables are also nuisance parameters, but eliminating them would make inference harder, not easier.) The modified conditional distribution is
+ (1)  
+where c=Mtg is the state of the Markov chain, and Γ() is the Gamma function (see Brown et al., 1993, for details) and I(Zpt=k) is an indicator function stating that the copy number call for patient p at probe t is k. Henceforth, we assume θtg has been removed from the model in this way.
+
+Our primary objective is to infer a clustering, p(Gp|𝒟), and a profile for each cluster, p(Mg1:T|𝒟). One approach would be to use Markov chain Monte Carlo (MCMC) to draw samples from the full posterior, but this is too slow for our application, which has about P ∼ 100 patients, and about T ∼ 27 000 probes (over all the chromosomes) per patient.
+
+An alternative would be to use the expectation maximization (EM) algorithm (Dempster et al., 1977). A natural approach would be to treat all the unknown discrete variables (i.e. Mtg, Ztg and Gp) as ‘hidden variables’, and treat the rest (i.e. Ag, πg, μkp, λkp) as ‘parameters’. Unfortunately, this makes the E step computationally intractable, since all the HMMs Mg1:T become coupled in the posterior. However, conditional on a known clustering (i.e. setting of Gp), the HMMs become independent. Hence we can estimate the posterior profile for group g using the data that belongs to group g using the forwards–backwards algorithm. (This requires marginalizing out Ztg as well, in order to derive the observation model p(Ytp|Mtg), but this is straightforward.) Note that this requires that we treat Gp as a ‘parameter’ in the sense that we estimate it in the M step rather than the E step. This requires that we perform a hard clustering of the patients, rather than a soft clustering.
+
+It turns out that even EM is too slow for our application, because of the need to marginalize out Ztg, and because of EM's relatively slow convergence. We therefore decided to use the iterative conditional modes (ICM) algorithm (Besag, 1986). This is a simple coordinate ascent algorithm, in which we set each variable to its most probable value given its neighbors in the graph. This can be thought of as a deterministic version of Gibbs sampling. Alternatively, it can be thought of as a version of Viterbi EM, in which we compute the most probable value of Mg1:T using the Viterbi algorithm instead of computing posterior marginals using forwards–backwards. More details on the algorithm can be found below. Its complexity is O(TGP) per iteration, where T is the number of probes, G is the number of groups and P is the number of patients. In practice, it takes about 320 s to fit the model to our DLBCL data (92 patients, 5 groups and 30 000 probes) on a MacBook Pro with 2.6 GHz Intel Core Duo 2 using a Matlab implementation.
+
+We now give a full description of the algorithm.
+
+2.2.1 HMM-mix algorithm—main loop
+The basic procedure iterates over each node, and either samples from, or maximizes, each full conditional distribution (details in Section 2.2.3).
+Estimate profile: p(Mg1:T|A, πM, Z1:P1:T, G1:P)
+
+Assign to cluster: p(Gp|πG, Zp1:T, Mg1:T)
+
+Call data: p(Ztp|Ytp, Gp, Mtg, μ1:3p, λ1:3p)
+
+Fit observation model: p(μkp, λkp|Y1:Tp, Z1:Tp, ϕ)
+
+Fit transition model: p(Ag|Mg1:T, δA)
+
+Fit group prior: p(πG|G1:P, δG)
+
+
+
+
+2.2.2 HMM-mix algorithm—initialization
+
+Set the hyper-parameters ϕ in a data-driven way, as explained in Shah et al. (2007).
+
+Estimate Z1:Tp for each patient separately using Shah et al. (2006).
+
+Estimate Gp using WKM (see Section 2.4) on Z1:T1:P.
+
+Estimate Mtg as follows. Given Z1:T1:P for the patients in group g, compute the entropy of each column. If the entropy is low and most calls are losses, set Mtg=L; if the entropy is low and most calls are gains, set Mtg=G; otherwise set Mtg=B.
+
+
+
+
+2.2.3 HMM-mix algorithm details
+We now explain each step in more detail.
+The most expensive step is the first one, which takes O(TGP) time using the Viterbi algorithm. To compute this, we need the observation likelihoods for each location, which are given by
+  
+where p(Ztp|Mgt=c) is the likelihood obtained by integrating out θtg using Dirichlet hyper-parameter αc (Equation 1). We then compute
+  
+
+
+Posterior over cluster assignments:
+  
+
+
+Posterior over calls
+  
+
+
+Update observation model parameters (as specified in Archambeau, 2005), but for the 1D case for each patient p. Use a Normal Gamma prior for p(μkp, λkp) (Fig. 2), with hyper-parameters (mk, ηk, Sk, γk). Compute the following quantities:
+  
+  
+where ρpt(k) is computed in step 3. The maximum a posteriori update equations then become:
+  
+  
+
+
+Posterior over transition matrix. Define the sufficient statistics as
+  
+Then
+  
+
+
+Posterior over group prior. Define the sufficient statistics as
+  
+Then
+  
+
+
+
+
+
+2.3 K-medoids
+To compare HMM-Mix to a simpler method, we decided to use the KM algorithm applied to precalled data, i.e. the input is Ztp rather than Ytp. [We used our own HMM method (Shah et al., 2006) to discretize each sample separately, but other methods could be used.] As such, KM (as well as WKM and WECCA, both described below) are two-step or sequential methods where in the first step, the raw data are called as discrete copy number states and in the second step, the patients are clustered based on the called data. KM is just like K-means, except each cluster is represented using one of the original samples (a discrete sequence of calls), rather than as an arithmetic average of the samples, which does not make sense for categorical data. KM requires a distance metric between a sample and a cluster center (prototype). We used Hamming distance: d(i, j)=∑t=1TI(Zti=Ztj). Since KM is prone to getting stuck in local minima, we used 100 restarts, and returned the clustering with the lowest overall distortion. To choose K (the number of clusters), we used the Silhouette coefficient (van der Laan et al., 2003) (see Section 2.6).
+
+2.4 Weighted KM
+The KM algorithm described above treats all probes (features) equivalently when computing the distance function. However, we assume that only a small subset of features are important in determining the distance between two patients. We therefore also tried a weighted distance function, d(i, j)=∑t=1TwtI(Zti=Ztj). We call the resulting method WKM.
+
+The weights are chosen in the following heuristic way. We first compute the empirical distribution over calls at each location, ft. We then compute the entropy of this distribution, Et=−∑k=L,N,Gft(k) logft(k). Finally, we assign high weights to locations which are highly entropic: wt=σ(Et/α), where  is the sigmoid function, and α is a constant that controls the steepness of the sigmoid. (We found α=0.25 gave good results.) The use of the sigmoid function ensures 0≤wt≤1.
+
+The reason that we assign high weights to the entropic locations is as follows: locations which are useful for distinguishing the groups must differ across patients, and hence are likely to have a multimodal distribution, whereas locations which are not discriminative are likely to have all possible values (be closer to uniform), and therefore have lower entropy.
+
+In our experimental results below, we show that WKM is much better than KM, although not as good as our model-based approach. However, because of its simplicity and speed, we use it as a way to initialize our model-based approach.
+
+2.5 Hierarchical clustering
+In recent work, van Wieringen and van de Wiel (2008) introduce a system called ‘Weighted clustering of called array CGH data’ (WECCA). This represents the first clustering approach to be tailored specifically to the aCGH data and is a specialized implementation of hierarchical agglomerative clustering. The authors define a weighted form of similarity, similar in spirit to the weighted Hamming distance described above, although the weights are expected to be provided by the user, rather than automatically calculated.
+
+2.6 Choosing the number of groups
+The KM and our HMM-Mix model both require that the user specify the number of clusters G. (Hierarchical clustering does not need this information, although one must specify some other mechanism for choosing where to cut the dendogram.) Since KM is not a probabilistic model, one can only use heuristics methods for picking G. We use the Silhouette coefficient (Tan et al., 2005), which computes a measure of quality that considers both cohesion (how similar the points in a cluster are) and separation (how different the clusters are). In particular, we compute S(G) for a range of values of G, and pick the G with maximum score.
+
+3 DATA
+3.1 Simulated data
+To test and compare performance of the various algorithms where the true clustering was known, we generated data and embedded group-specific patterns of recurrent CNAs. To avoid circularity that can arise from generating data from the model directly, we created datasets based on real aCGH data derived from mantle cell lymphoma cell lines reported in de Leeuw et al. (2004) and used similarly in Shah et al. (2007). We first extracted the data from chromosome 21 (chosen because it was reported to have relatively few alterations), resulting in a dataset of 8 samples each with 672 probes. For each simulated dataset, we performed 100 random draws (simulating patients) from the eight cell lines. For each of the 100 patients, we shuffled the 672 probes and randomly assigned the patient to one of G groups. For each group, we preset coordinates of one recurrent gain and one recurrent loss. These group-specific coordinates defined the profile for the group. The alterations were embedded into each patient's data at their group-specific coordinates, plus a random offset number of probes (sampled from a Gamma distribution with a mean of 10 probes). This offset was meant to simulate the fact that recurrent CNAs often have different patient-specific start and end coordinates, but have segments that intersect across patients. Losses were generated by shifting 1 SD down from the neutral state, and gains were shifts of 1 SD up. Finally, for each patient, we randomly embedded alterations of length L at locations different than the group-specific alterations in order to simulate patient-specific ‘passenger’ alterations expected to be unrelated to the group profile. We created 10 replications with G=3, 5, 10 and L=50, 75 yielding 60 datasets. These data and the ground truth cluster assignments are included in the Supplemental Material.
+
+With these ground truth datasets in hand, we evaluated clustering accuracy using the Jaccard coefficient as described by Tan et al. (2005). (This is a number between 0 and 1, where 1 is the best possible score, corresponding to perfect correspondence to the true clustering.)
+
+3.2 Clinical data
+We use two clinical datasets: FL (Fig. 4) and DLBCL (Fig. 5).
+
+The FL data were derived from 106 samples taken at time of diagnosis from patients with FL. These data were previously reported in Cheung et al. (2008) and were expected to fall into at least four genetic subtypes (Höglund et al., 2004). A characteristic of FL is that in a subset of patients, the tumor undergoes a transformation to a more aggressive subtype that consistently correlates with inferior survival outcome. Developing a prognostic CNA profile predictive of transformation is therefore of great clinical interest.
+
+The DLBCL data (Johnson et al., 2008), contains aCGH data for 92 patients with de novo DLBCL, all treated uniformly with multi-agent chemotherapy (CHOP) and anti-CD20 monoclonal antibody rituximab.
+
+All clinical data were produced using the SMRT array platform (Ishkanian et al., 2004) and contain approximately 27 000 probes per sample.
+
+4 RESULTS
+4.1 Simulated data
+Figure 3 shows the distribution of the Jaccard coefficient resulting from using WECCA, KM, WKM and HMM-Mix on the 10 replicates for each setting of G, the number of groups and L, the length of the distracting patient-specific passenger alterations. Table 2 contains the mean and standard error for each of the six datasets for the four methods. HMM-Mix showed the highest accuracy for all six settings. When G=3, L=50 (Fig. 3A), HMM-Mix and WKM were more accurate than WECCA at recovering the ground truth classes, and statistically more accurate than KM (one-way ANOVA, P<0.01). For G=3, L=75 (Fig. 3D) and G=5, L=50 (Fig. 3B), HMM-Mix was more accurate than WKM and statistically more accurate than both KM and WECCA (P<0.01). For G=5, L=75 (Fig. 3E), G=10, L=50 (Fig. 3C) and G=10, L=75 (Fig. 3F), HMM-Mix was statistically more accurate than all other methods (P<0.01). However, for G=10, L=75 all methods performed poorly, since this problem is much harder than the others: there are only 10 samples per group, and each sample is ‘corrupted’ with a fairly long (L=75) random CNAs. We repeated these experiments using P=500 patients, and all methods improved in their accuracy, although the overall relative rankings are the same (data not shown).
+Fig. 3. Distribution of accuracy of WECCA, KM, WKM and HMM-Mix for synthetic data generated with six different parameter settings. HMM-Mix was the most accurate for all six settings (see Table 2 for details). Each dataset was composed of P=100 patients with 672 probes each. From left to right there were G=3, 5, 10 embedded groups in the data. The top row had randomly placed CNAs of L=50 and the bottom row with L=75. Distributions of Jaccard coefficient over 10 replicates of the G, L settings are shown as notched box plots where non-overlapping notches indicate statistical difference of the medians (red horizontal lines) with 95% CI.
+
+
+Table 2. Results for simulation study showing means and standard errors of the Jaccard coefficient
+
+Dataset	WECCA	KM	WKM	HMM-Mix	ANOVA P-value	
+G=3 L=50	0.959±0.018	0.916±0.027	0.996±0.004	0.996±0.004	4.2 × 10−3	
+G=5 L=50	0.692±0.048	0.734±0.034	0.932±0.018	0.976±0.007	5.7 × 10−8	
+G=10 L=50	0.296±0.022	0.375±0.033	0.317±0.031	0.580±0.065	6.7 × 10−5	
+G=3 L=75	0.611±0.030	0.828±0.029	0.923±0.022	0.965±0.009	4.3 × 10−12	
+G=5 L=75	0.460±0.019	0.548±0.057	0.730±0.043	0.964±0.011	6.2 × 10−11	
+G=10 L=75	0.131±0.010	0.202±0.010	0.138±0.010	0.223±0.032	1.3 × 10−3	
+
+
+
+HMM-Mix was generally more robust to the size L of the randomly placed passenger alterations than the other methods, suggesting that the model is able to maintain its ability to detect group-specific alterations in the presence of additional structured noise.
+
+We also tested the robustness of HMM-Mix to initialization. In particular, we initialized with both KM and WKM, and found that the final results were nearly identical, despite the fact that WKM was significantly more accurate than KM.
+
+This suggests that in these settings, HMM-Mix is able to overcome a poor initialization, most likely due to its ability to re-estimate the calls and adapt the feature selection during inference. We suspect that these characteristics allow it to escape from local optima more readily than WKM, which cannot re-estimate the calls and requires the feature selection to be fixed ahead of time. Thus, these results suggest that the joint inference of group assignments and copy number calls used by HMM-Mix is more robust than the sequential methods of WECCA, KM and WKM, all of which perform a two-step method of first calling the data, then clustering.
+
+4.2 FL data
+We applied HMM-Mix to the FL cohort of 106 patients (Cheung et al., 2008). We initialized the model using WKM with 100 multiple restarts and we determined the number of groups to be 6 using the maximum Silhouette coefficient over G=(2,…, 8). Figure 4 shows the WKM initializations, and the final results of HMM-Mix. In particular, Figure 4A shows the initial Z1:P1:T matrix where rows are patients and columns are probes. The rows are ordered according to their WKM cluster assignments. The green, red and black probes are predicted losses, gains and neutrals, respectively. Figure 4B shows the converged estimates of HMM-Mix where the rows have been ordered according to the HMM-Mix cluster assignments, and the data displayed are the re-estimated calls in the presence of the profiles. Figure 4B (top) shows the profiles of each group and it is clear that the re-estimated calls are heavily influenced by their corresponding profiles.
+Fig. 4. Clustering of FL data showing the initial calls and WKM clusters (A), the converged estimates of the calls (B), clusters and profiles by HMM-Mix and the associated time to transformation Kaplan-Meier plots for each group (C). (A) The calls and clusters depicted as a heat map for WKM with G=6. The rows of the data indicate the patients and the columns indicate the probes. Red indicates gain, green loss and black neutral. The rows are ordered according to their assigned groups as predicted by WKM. (B) The posterior probability of the calls (where red represents p(Zpt=red), blue represents p(Zpt=neutral)) and green represents p(Zpt=loss), the clusters and the profiles (top) for the G=6 groups. In comparison to (A) the clusters are readily apparent from the data, they appear to be tighter and the re-estimated calls are clearly influenced by the profiles, resulting in far less noisy, and far more interpretable output. Importantly, 4 of the 6 groups (labeled on right) recapitulate the previously reported subtypes for FL. Group numbers that correspond to the time to transformation curves (C) are annotated on the right of (B). Groups 1 and 6 both had statistically significantly shorter time to transformation. (C) Time to transformation Kaplan-Meier curves for each group of patients as predicted by HMM-Mix for the FL cohort. Groups 1 and 6 (black and yellow) had significantly reduced time to transformation by log-rank test with 5 degrees of freedom. [The green curve corresponds to the singleton group shown in (B)]. These correspond, respectively, to the groups characterized by+7 and 6p-/6q+and suggests that these recurrent CNAs confer inferior prognoses to the patients in these groups.
+
+
+
+
+The resulting groups can be summarized as follows: (1) +7 (meaning gain of chromosome 7) (7 patients); (2): a ‘null’ group with no recurrent alterations (67 patients); (3): a group with+18 (19 patients); (4): a group with +1q and a small loss at 1p36 (7 patients); (5): a singleton outlier (1 patient); and (6): +6p/6q- (5 patients). Notably, +1p, +6p/6q−, +7, and +18 have previously been established as cytogenetic pathways to the initiation and development of FL using principal component analysis applied to data generated by a difference laboratory technique called G-banded karyotyping (Höglund et al., 2004).
+
+The clusters produced by HMM-Mix set mirror those reported in Cheung et al. (2008). In that paper, the WKM method was used to perform the clustering, but the method used significant human expertise both in determining the initial called data, Z1:P1:T, and in defining the weighting terms, w1:T. In addition, the number of groups (5) was chosen using supporting evidence from the literature. In contrast, HMM-Mix is fully automated, with no user-settable parameters, yet it managed to recover essentially the same results of this previous method.
+
+As further validation of the biological significance of the clusters found by our method, we computed Kaplan-Meier curves for each group of the time to transformation (TTT) (defined as the time from diagnosis to clinical or pathological endpoint: transformation to the more aggressive subtype). We show the results in Figure 4C. We see that groups 1 and 6 (black and yellow curves) display a significantly shortened TTT to the others (log-rank test, P<0.01), indicating the profiles characterized by +7 and +6p/6q- are potential unfavorable prognostic indicators for FL. Note that by WKM, group 1 (shown as the top group in Fig. 4) which results in the HMM-Mix group characterized by +7 only contains two patients which is inconsistent with both Cheung et al. (2008) and Höglund et al. (2004) and might therefore be considered less plausible than the HMM-Mix results. The resulting clusters for the 106 patients predicted by WKM and HMM-Mix are included in the Supplemental Material.
+
+4.3 DLBCL data
+Figure 5 shows the results of applying WKM and HMM-Mix to the 92 patients in the DLBCL cohort. We see that HMM-Mix is achieving the desired effect of focusing on putative driver or highly recurrent within-group alterations, while ignoring non-recurrent passenger alterations, thus clearly separating signal from noise. The data fell into five distinct groups characterized by a ‘null’ group with no discernible pattern, and four groups characterized by 1p-/+1q/+2p/+11q/15-, +7, 6q− and +3/+18. The last group is a previously unreported pattern of alteration in DLBCL. Previous work had identified that both changes show increased frequency in the so-called activated B cell (ABC) subtype of DLBCL (Bea et al., 2005), but had not recognized that these two alterations travel together and may indeed define a unique molecular subgroup.
+Fig. 5. Clustering of 92 DLBCL profiles into five groups. Comparison between WKM initialization (A) and HMM-Mix (B) clearly shows HMM-Mix ability to reduce noise and report only highly conserved within-group patterns. The bottom cluster for HMM-Mix (B) shows a potentially novel subtype with gain of chromosome +3/+18. The colors for both (A) and (B) are as described in Figure 4.
+
+
+
+
+5 DISCUSSION AND FUTURE WORK
+The HMM-Mix model presented in this article is effectively able to discover subgroups and their defining profiles given a set of aCGH data derived from a patient cohort. We showed the model's capability of finding clinically relevant subtypes in an FL cohort and a previously undescribed subtype in the DLBCL cohort. We demonstrated how the joint inference procedure of inferring copy number calls, cluster assignments and profiles, coupled with adaptive feature selection, makes HMM-Mix significantly more accurate than partitioning and hierarchical clustering methods. Future work will entail experimental validation and further exploration of the +7 and 6p-/6q+subgroups detected in the FL cohort for prognostic significance for TTT, and determining clinical relevance of the DLBCL subgroups we reported.
+
+Extension of HMM-Mix to high density SNP arrays (e.g. Affymetrix 6.0) will be of interest, as patterns of both genotype and copy number can be elucidated. HMM-based models for SNP arrays introduced in Colella et al. (2007) and Scharpf et al. (2008) will be investigated for extension to the clustering setting using the HMM-Mix framework introduced here. Compared to the BAC arrays used in this study, genotyping array probes are much less uniformly distributed across the chromosome. Thus, location-specific transition matrices with distance-based priors as suggested by Colella et al. (2007) will be a necessary feature of this work. (Note that most likely owing to the fact that the platform used to generate the data in this study has relatively uniformly distributed probes, we found that non-stationary transition matrices made no difference to our results.) In addition, we will be applying the model to a large cohort of breast tumors for which we have generated Affymetrix SNP 6.0 data with the goal of uncovering novel molecular subtypes. Note that the CNAs in lymphoma entities we studied as part of this article can be dominated by chromosome arm or whole chromosome events. Application to breast cancer will allow us to assess how well the model generalizes to cancers that have much more complex genomes.
+
+Finally, we are investigating the use of variational methods Bishop (2006) for inference that will at once obviate the need to hard assign each patient to a group and preserve the computational efficiency of the inference algorithm. We expect this extension to provide full posterior distributions over the quantities of interest thus better modeling the uncertainty of these estimates. In addition, we are investigating approaches to model selection to avoid having to choose the number of groups at run time.
+
+Funding: Michael Smith Foundation for Health Research (to S.P.S.). KPM wishes to acknowledge support from an NSERC Discovery Grant and from CIFAR. N.A.J. is a research fellow of the Terry Fox Foundation through an award from the National Cancer Institute of Canada (019005) and the Michael Smith Foundation for Health Research (ST-PDF-01793). This project was funded by NCIC grants #016003 and #019001 and Genome Canada.
+
+Conflict of Interest: none declared.
+
+1Indeed, one of the primary goals of inference is to find the probes for which p(Mtg≠B|𝒟) is high; these probes represent a sparse profile defining the signature for group g. Thus, our model is somewhat similar to approaches that perform simultaneous feature selection and clustering (Law et al., 2004; Raftery and Dean, 2006).
+==== Refs
+REFERENCES
+Aguirre AJ  High-resolution characterization of the pancreatic adenocarcinoma genome Proc. Natl Acad. Sci. USA 2004 101 9067 9072 15199222 
+Archambeau C  Probabilistic models in noisy environments – and their application to a visual prosthesis for the blind PhD Thesis. 2005 Universit catholique de Louvain 
+Bea S  Diffuse large b-cell lymphoma subgroups have distinct genetic profiles that influence tumor biology and improve gene-expression-based survival prediction Blood 2005 106 3183 3190 16046532 
+Besag J  On the statistical analysis of dirty pictures J. R. Stat. Soc. Ser. B 1986 48 259 302 
+Bishop CM  Pattern Recognition and Machine Learning. 2006 New York, NY Springer 
+Brown MP  Using Dirichlet mixture priors to derive Hidden Markov models for protein families Proceedings of the 1st International Conference on Intelligent Systems for Molecular Biology. 1993 AAAI 47 55 
+Cheung KJ  Genome-wide profiling of follicular lymphoma by array comparative genomic hybridization reveals prognostically significant DNA copy number imbalances Blood 2008 113 137 148 18703704 
+Chin L Gray J  Translating insights from the cancer genome into clinical practice Nature 2008 242 553 563 18385729 
+Chin SF  High-resolution aCGH and expression profiling identifies a novel genomic subtype of ER negative breast cancer Genome Biol. 2007 8 R215 17925008 
+Colella S  QuantiSNP: an objective Bayes Hidden-Markov Model to detect and accurately map copy number variation using SNP genotyping data Nucleic Acids Res. 2007 35 2013 2025 17341461 
+Collins FS Barker AD  Mapping the cancer genome. Pinpointing the genes involved in cancer will help chart a new course across the complex landscape of human malignancies Sci. Am. 2007 296 50 57 17348159 
+de Leeuw RJ  Comprehensive whole genome array CGH profiling of mantle cell lymphoma model genomes Hum. Mol. Genet. 2004 13 1827 1837 15229187 
+Dempster AP  Maximum likelihood from incomplete data via the EM algorithm J. R. Stat. Soci. Ser. B 1977 34 1 38 
+Diskin SJ  STAC: A method for testing the significance of DNA copy number aberrations across multiple array-CGH experiments Genome Res. 2006 16 1149 1158 16899652 
+Gilks W  Markov Chain Monte Carlo in Practice. 1996 London Chapman & Hall 
+Höglund M  Identification of cytogenetic subgroups and karyotypic pathways of clonal evolution in follicular lymphomas Genes Chromosomes Cancer 2004 39 195 204 14732921 
+Idbaih A  BAC array CGH distinguishes mutually exclusive alterations that define clinicogenetic subtypes of gliomas Int. J. Cancer 2008 122 1778 1786 18076069 
+Ishkanian A  A tiling resolution DNA microarray with complete coverage of the human genome Nat. Genet. 2004 36 299 303 14981516 
+Johnson NA  Deletion in chromosome 17p12 and gains in chromosome 9q33.3 by array comparative hybridization are associated with R-CHOP treatment failure in patients with diffuse large B cell lymphoma Blood 2008 111 a477 
+Khalique L  Genetic intra-tumour heterogeneity in epithelial ovarian cancer and its implications for molecular diagnosis of tumours J. Pathol. 2007 211 286 295 17154249 
+Klijn C  Identification of cancer genes using a statistical framework for multiexperiment analysis of nondiscretized array CGH data Nucleic Acids Res. 2008 36 e13 18187509 
+Law MHC  Simultaneous Feature selection and clustering using mixture models IEEE Trans. Pattern Anal. Mach. Intell. 2004 26 1154 1166 15742891 
+Michels E  ArrayCGH-based classification of neuroblastoma into genomic subgroups Genes Chromosomes Cancer 2007 46 1098 1108 17823929 
+Perou CM  Molecular portraits of human breast tumours Nature 2000 406 747 752 10963602 
+Pinkel D Albertson D  Array comparative genomic hybridization and its applications in cancer Nat. Genet. 2005 37 Suppl 11 17 15624015 
+Raftery AE Dean N  Variable selection for model-based clustering J. Am. Stat. Assoc. 2006 101 168 178 
+Rouveirol C  Computation of recurrent minimal genomic alterations from array-CGH data Bioinformatics 2006 22 849 856 16434445 
+Scharpf RB  Hidden Markov models for the assessment of chromosomal alterations using high-throughput SNP arrays Ann. Appl. Stat. 2008 2 687 713 
+Shah SP  Integrating copy number polymorphisms into array CGH analysis using a robust HMM Bioinformatics 2006 22 431 439 
+Shah SP  Modeling recurrent DNA copy number alterations in array CGH data Bioinformatics 2007 23 450 458 17150994 
+Sorlie T  Molecular portraits of breast cancer: tumour subtypes as distinct disease entities Eur. J. Cancer 2004 40 2667 2675 15571950 
+Tan P-N  Introduction to Data Mining. 2005 First Boston, MA, USA Addison-Wesley Longman Publishing Co., Inc. 
+Tonon G  High-resolution genomic profiles of human lung cancer Proc. Natl Acad. Sci. USA 2005 102 9625 9630 15983384 
+van der Laan MJ  A new partitioning around medoids algorithm J. Stat. Comput. Simul. 2003 73 575 584 
+van Wieringen WN van de Wiel,MA  Nonparametric testing for DNA copy number induced differential mRNA gene expression Biometrics 2008 9 484 500 
+Wright G  A gene expression-based method to diagnose clinically distinct subgroups of diffuse large b cell lymphoma Proc. Natl Acad. Sci. USA 2003 100 9991 9996 12900505

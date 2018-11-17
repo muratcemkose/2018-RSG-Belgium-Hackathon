@@ -1,0 +1,319 @@
+
+==== Front
+BioinformaticsbioinformaticsbioinfoBioinformatics1367-48031367-4811Oxford University Press 10.1093/bioinformatics/btq186btq186Ismb 2010 Conference Proceedings July 11 to July 13, 2010, Boston, Ma, UsaOriginal PapersPopulation GenomicsTEAM: efficient two-locus epistasis tests in human genome-wide association study Zhang Xiang 1*Huang Shunping 1Zou Fei 2Wang Wei 11 Department of Computer Science and 2 Department of Biostatistics, University of North Carolina at Chapel Hill* To whom correspondence should be addressed.15 6 2010 1 6 2010 1 6 2010 26 12 i217 i227 © The Author(s) 2010. Published by Oxford University Press.2010This is an Open Access article distributed under the terms of the Creative Commons Attribution Non-Commercial License (http://creativecommons.org/licenses/by-nc/2.5), which permits unrestricted non-commercial use, distribution, and reproduction in any medium, provided the original work is properly cited.As a promising tool for identifying genetic markers underlying phenotypic differences, genome-wide association study (GWAS) has been extensively investigated in recent years. In GWAS, detecting epistasis (or gene–gene interaction) is preferable over single locus study since many diseases are known to be complex traits. A brute force search is infeasible for epistasis detection in the genome-wide scale because of the intensive computational burden. Existing epistasis detection algorithms are designed for dataset consisting of homozygous markers and small sample size. In human study, however, the genotype may be heterozygous, and number of individuals can be up to thousands. Thus, existing methods are not readily applicable to human datasets. In this article, we propose an efficient algorithm, TEAM, which significantly speeds up epistasis detection for human GWAS. Our algorithm is exhaustive, i.e. it does not ignore any epistatic interaction. Utilizing the minimum spanning tree structure, the algorithm incrementally updates the contingency tables for epistatic tests without scanning all individuals. Our algorithm has broader applicability and is more efficient than existing methods for large sample study. It supports any statistical test that is based on contingency tables, and enables both family-wise error rate and false discovery rate controlling. Extensive experiments show that our algorithm only needs to examine a small portion of the individuals to update the contingency tables, and it achieves at least an order of magnitude speed up over the brute force approach.
+
+Contact: xiang@cs.unc.edu
+==== Body
+1 INTRODUCTION
+Genetic association analysis examines the statistical correlation between an organism's genotype with its phenotype. With the development of high-throughput genotyping technologies, genetic variation of human and other model organisms has been measured at genome-wide scale. As the most abundant source of genetic variation, the number of single nucleotide polymorphism (SNPs) in public databases (dbGaP, JAX) is up to millions. Genome-wide association study (GWAS) has been shown to be a promising tool to locate the genetic factors that cause phenotypic differences (Saxena et al., 2007; Scuteri et al., 2007; WTCCC, 2007; Weedon et al., 2007). Epistasis, or gene–gene interaction detection, has received increasing attention in complex trait analysis. Different from single-locus approach, the goal of two-locus epistasis detection is to identify interacting SNP pairs that have strong association with the phenotype. Please refer to Balding (2006), Hirschhorn and Daly (2005), Hoh and Ott (2003) and Musani et al. (2007) for reviews of current progress and challenges in epistasis detection in GWAS.
+
+There are two grand challenges in epistasis detection. The first is to develop statistical tests that can effectively capture the interaction between SNPs. Various tests have been proposed for two-locus association study, such as the chi-square test, likelihood ratio test and entropy-based test (Balding, 2006). Another crucial challenge in two-locus association study is the intensive computational burden imposed by the enormous search space. Suppose that there are N SNPs for M individuals. The overall search space of pairwise interactions is MN(N − 1)/2. The large number of tests also causes the multiple testing problem (Miller, 1981). Controlling the family-wise error rate (FWER) and false discovery rate (FDR) are standard ways to control the error rate (Dudoit and Laan, 2008; Westfall and Young, 1993). In the FWER and FDR controlling, permutation test is preferred over simple Bonferroni correction since many SNPs are correlated (Churchill and Doerge, 1994). The correlation structure among genotype profiles is preserved across permutations and is incorporated into permutation P-value estimation. The idea of permutation test is to randomly shuffle the phenotype values among the individuals and recalculate the test statistics. The distribution of these test values are used to estimate the null distribution. Permutation test dramatically increases the search space. With K permutations, the entire search space of two-locus association mapping is KMN(N − 1)/2. Consider a moderate GWAS setting, in which M = 1000, N = 100 000 and K = 1000. The size of the search space is about 5 × 1015. Apparently, a brute force enumeration of the search space is infeasible and thus efficient algorithms are in demand.
+
+Although the computational challenge of epistasis detection has been well recognized, the algorithmic development is still very limited. For a small number of SNPs, e.g. from tens to a few hundreds, exhaustive algorithms that explicitly enumerate all possible SNP combinations have been developed (Nelson et al., 2001; Ritchie et al., 2001). These methods are not scalable for genome-wide computing. Genetic algorithm (Carlborg et al., 2000) has been proposed. This approach is heuristic, which does not guarantee to find the optimal solution. To avoid explicitly exploring the entire search space, a common heuristic used in epistasis detection is a two-step approach (Evans et al., 2006; Hoh et al., 2000; Yang et al., 2009). First, a subset of SNPs are selected according to certain criteria. Then the selected SNPs are used for subsequent epistatic analysis. However, the SNP screening process suffers from the same problem as the single-locus approach. SNPs with strong epistasis but low marginal effects are likely to be filtered out (Zhang et al., 2009a).
+
+Recently, the approach based on search space pruning has been shown to be able to dramatically speed up the process of epistasis detection without compromising the optimality of the results. FastANOVA (Zhang et al., 2008) and FastChi (Zhang et al., 2009b) are specifically designed for ANOVA test and chi-square test, respectively. The COE algorithm (Zhang et al., 2009a) is a more general approach that is applicable to all convex tests. Utilizing an upper bound derived for the test being used, these algorithms only need to examine a small number of promising SNP pairs and prune the SNP pairs that are proven to have no strong association with the phenotype. Unlike heuristic approaches, these algorithms are guaranteed to find the optimal solution. Although these methods provide promising alternatives for GWAS, there are two major drawbacks that limit their applicability. First, they are designed for relatively small sample size and only consider homozygous markers (i.e. each SNP can be represented as a {0, 1} binary variable). In human study, however, the sample size is usually large and most SNPs contain heterozygous genotypes and are coded using {0, 1, 2}. These make existing methods intractable. Second, although the FWER and the FDR are both widely used for error controlling, existing methods are designed only to control the FWER. From a computational point of view, the difference in the FWER and the FDR controlling is that, to estimate FWER, for each permutation, only the maximum two-locus test value is needed. To estimate the FDR, on the other hand, for each permutation, all two-locus test values must be computed. Further details of the FWER and the FDR controlling are described in Section 2.
+
+In this article, we propose an exhaustive algorithm, TEAM (Tree-based Epistasis Association Mapping), for efficient epistasis detection in human GWAS. TEAM has several advantages over previous methods.
+It supports to both homozygous and heterozygous data.
+
+By exhaustively computing all two-locus test values in permutation test, it enables both FWER and FDR controlling.
+
+It is applicable to all statistics based on the contingency table. Previous methods are either designed for specific tests or require the test statistics to satisfy certain property.
+
+Experimental results demonstrate that TEAM is more efficient than existing methods for large sample study.
+
+
+
+
+TEAM incorporates permutation test for proper error controlling. The key idea is to incrementally update the contingency tables of two-locus tests. We show that only four of the 18 observed frequencies in the contingency table need to be updated to compute the test value. In the algorithm, we build a minimum spanning tree (Cormen et al., 2001) on the SNPs. The nodes of the tree are SNPs. Each edge represents the genotype difference between the two connected SNPs. This tree structure can be utilized to speed up updating process for the contingency tables. A majority of the individuals are pruned and only a small portion are scanned to update the contingency tables. This is advantageous in human study, which usually involves thousands of individuals. Extensive experimental results demonstrate the efficiency of the TEAM algorithm.
+
+2 THE PROBLEM OF TWO-LOCUS EPISTASIS DETECTION IN HUMAN GWAS
+Suppose that the genotype dataset consists of N SNPs {X1,…, XN} for M individuals {S1,…, SM}. We adopt the convention of using 0 and 2 to represent the homozygous majority and homozygous minority genotypes, respectively, and 1 to represent the heterozygous case. Let Y0 ∈ {0, 1} be the phenotype of interest (0 for controls and 1 for cases). Let Y′ = {Y1,…, YK} be the set of K permutations of Y0. In each permutation Yk, the phenotype labels are randomly reassigned to individuals with no replacement.
+
+Table 1 shows an example dataset of SNPs and phenotype permutations. The genotype dataset consists of six SNPs {X1,…, X6} for 24 individuals {S1,…, S24}. Individuals {S1,…, S12} are cases and {S13,…, S24} are controls. The phenotype is permuted five times, i.e. Y′ = {Y1,…, Y5}.
+Table 1. An example dataset consisting of six SNPs {X1,…, X6}, the original phenotype Y0 and five phenotype permutations {Y1,…, Y5} for 24 individuals {S1,…, S24}
+
+	S1	S2	S3	S4	S5	S6	S7	S8	S9	S10	S11	S12	S13	S14	S15	S16	S17	S18	S19	S20	S21	S22	S23	S24	
+X1	0	0	0	1	2	0	2	0	2	0	0	2	0	0	0	2	0	2	1	0	0	2	2	0	
+X2	2	2	0	2	0	2	0	2	2	2	2	0	1	0	0	2	0	2	1	0	2	2	2	2	
+X3	2	0	0	2	0	2	0	1	2	1	2	2	1	0	2	2	0	2	1	2	2	2	2	2	
+X4	0	2	2	0	0	0	2	1	0	2	2	0	0	0	0	0	0	0	1	0	1	2	0	0	
+X5	0	2	2	0	0	0	1	1	2	1	2	0	0	0	0	0	0	2	1	0	2	2	0	2	
+X6	0	2	2	0	0	0	2	1	0	1	2	0	0	0	0	2	0	2	1	0	2	2	0	0	
+	
+Y0	1	1	1	1	1	1	1	1	1	1	1	1	0	0	0	0	0	0	0	0	0	0	0	0	
+Y1	0	1	0	0	1	1	1	0	0	0	1	1	1	1	1	0	1	0	0	1	0	1	0	0	
+Y2	0	0	1	0	1	1	1	1	1	1	0	0	1	0	0	1	1	1	0	0	0	1	0	0	
+Y3	1	0	1	1	1	1	0	1	1	1	0	0	0	1	0	1	0	0	1	0	0	0	1	0	
+Y4	0	1	1	1	1	1	0	0	0	1	0	0	1	0	1	0	0	0	1	1	0	1	1	0	
+Y5	1	0	1	1	0	0	0	0	0	1	1	1	1	0	1	1	0	0	0	0	0	1	1	1	
+
+
+
+Let ℑ denote the statistical test to be used. Specifically, we represent the test value of SNP Xi and phenotype Yk (0≤k≤K) as ℑ(Xi, Yk), and represent the test value of SNP pair (XiXj) and Yk as ℑ(XiXj, Yk). A contingency table that records the observed values of certain events, is the basis of many statistical tests. Tables 2–4 show contingency tables for the single-locus tests ℑ(Xi, Yk) and ℑ(Xj, Yk), genotype relationship between SNPs Xi and Xj and two-locus test ℑ(XiXj, Yk), respectively.
+Table 2. Contingency tables for single-locus tests ℑ(Xi, Yk) and ℑ(Xj, Yk)
+
+Contingency table for ℑ(Xi, Yk)	Contingency table for ℑ(Xj, Yk)	
+	Xi=0	Xi=1	Xi=2	Total		Xj=0	Xj=1	Xj=2	Total	
+Yk=0	Event A	Event B	Event E		Yk=0	Event G	Event H	Event I		
+Yk=1	Event C	Event D	Event F		Yk=1	Event J	Event L	Event O		
+	
+Total				M	Total				M	
+
+Table 3. Contingency table for genotype relation between two SNPs Xi and Xj
+
+	Xi=0	Xi=1	Xi=2	Total	
+Xj=0	Event S	Event T	Event R		
+Xj=1	Event P	Event Q	Event U		
+Xj=2	Event V	Event W	Event Z		
+	
+Total				M	
+
+Table 4. Contingency table for two-locus test ℑ(XiXj, Yk)
+
+	Xi=0	Xi=1	Xi=2	Total	
+	Xj=0	Xj=1	Xj=2	Xj=0	Xj=1	Xj=2	Xj=0	Xj=1	Xj=2		
+Yk=0	Event a1	Event a2	Event a3	Event b1	Event b2	Event b3	Event e1	Event e2	Event e3		
+Yk=1	Event c1	Event c2	Event c3	Event d1	Event d2	Event d3	Event f1	Event f2	Event f3		
+	
+Total										M	
+
+
+
+Due to the large number of hypotheses being tested, multiple testing problem has received considerable attention in GWAS. Controlling the FWER and FDR are two widely used approaches to control the error rate. The FWER is the probability of having at least one false positive. The FDR is the expected proportion of false positives among rejected hypotheses. Permutation test is the standard way to estimate the null distribution in both approaches. Next, we briefly describe the typical procedures of the FWER and FDR control. For statistical background of these approaches, refer to Dudoit and Laan (2008) and Westfall and Young (1993) for details.
+
+The FWER controlling procedure: for each permutation Yk ∈ Y′, let ℑYk represent the maximum test value among all SNP pairs, i.e. ℑYk = max {ℑ(XiXj, Yk)|1 ≤ i < j ≤ N}. The distribution of {ℑYk|Yk ∈ Y′} is used as the null distribution. Given an error rate threshold α, the critical value ℑα is the αK-th largest value in {ℑYk|Yk ∈ Y′}. A SNP pair (XiXj) is considered significant if its test value with the original phenotype Y0 exceeds the critical value, i.e. ℑ(XiXj, Y0)≥ℑα.
+
+The FDR controlling procedure: let PV represent the set of the pooled test values of all permutation tests, i.e. PV={ℑ(XiXj, Yk)|1≤i<j≤N, 1≤k≤K}. The P−value of test ℑ(XiXj, Y0) can be calculated as p(ℑ(XiXj, Y0))=|{t≥ℑ(XiXj, Y0)|t∈PV}|/|PV|, i.e. the proportion of the values in PV that are no less than ℑ(XiXj, Y0). Let p(1)≤p(2)…≤p(N(N−1)/2) be the ordered P-values of the original tests. Let . The classic Benjamini–Hochberg method rejects all hypotheses for which the corresponding P-values are in the set {p(1), p(2),…, p(v)}.
+
+In the FWER controlling, we only need the maximum test value of each permutation. To control the FDR, all test values need to be computed to estimate the P-value of the original tests. The existing algorithms, such as FastChi (Zhang et al., 2009b) and COE (Zhang et al., 2009a), prune the SNP pairs having weak associations. Thus they cannot be used to control the FDR. Our algorithm, TEAM, exhaustively computes the test values of all SNP pairs for every permutation. It can be used for both the FWER and FDR controlling. In this article, we mainly focus on the problem of permutation test, since it is the most computationally intensive procedure. Testing SNP pairs using original phenotype can be treated as a special case of permutation test.
+
+3 FREE VARIABLES IN THE CONTINGENCY TABLE OF TWO-LOCUS TEST
+Let Eevent and Oevent denote the expected frequency and observed frequency of an event in Tables 2–4. Note that each event represents a subset of individuals. For example, event D is a subset of individuals satisfying (Xi = 1 ∧ Yk = 1), and OD represents its observed frequency, i.e. OD = |D|. Using the dataset in Table 1, consider X3 and Y4 (i.e. i = 3 and k = 4), we have D = {S10, S13, S19}, and OD = 3.
+
+Many statistics, such as chi-square test and likelihood ratio test are defined as functions of the observed frequencies in contingency tables. For any test ℑ based on the contingency table, to calculate the two-locus test value ℑ(XiXj, Yk), one needs all 18 observed frequencies for the events in the two-locus contingency table shown in Table 4. The following theorem shows that we only need four of the 18 values to calculate the two-locus test value given the three contingency tables in Tables 2 and 3.
+
+Theorem 3.1.
+For SNPs Xi, Xj and permutation Yk, given the observed frequencies in Tables 2 and 3, specifically, the values of {OD, OF, OJ, OL, OO, OS, OP, OV, OT, OQ, OW, OR, OU, OZ}, all of the observed frequencies in Table 4 can be determined if the values of {Od2, Od3, Of2, Of3} are known.
+
+Proof.
+See Appendix.
+
+Suppose that we have all the single-locus contingency tables, i.e. Table 2. Given a SNP pair (Xi, Xj), Table 3 is fixed. Thus, from Theorem 3.1, for permutation Yk, once we have the values of {Od2, Od3, Of2, Of3}, ℑ(XiXj, Yk) can be calculated accordingly. In the following, we show that these values can be computed incrementally utilizing a minimum spanning tree built on SNPs. We focus on the incremental process for Od2. The same process can be applied to update Od3, Of2 and Of3. We first discuss how to update Od2 for a specific permutation. Then we show that the procedure can also handle all the permutations in a batch mode.
+
+4 BUILDING THE MINIMUM SPANNING TREE ON THE SNPS
+To build a minimum spanning tree (Cormen et al., 2001) on the SNPs, let the SNPs {X1, X2,…, XN} be the nodes and SNP pairs (XiXj) (i≠j) be the (undirected) edges. For each edge (XiXj), we denote its weight (the number of individuals having different genotypes in the two SNPs) as w(XiXj). A spanning tree 𝒯 is a tree that spans (connects) all SNPs. Let V(𝒯) be its node set and E(𝒯) be its edge set. A minimum spanning tree is a spanning tree whose weight W𝒯=∑w(XiXj), where (XiXj) ∈ E(𝒯), is no greater than any other spanning tree. Figure 1 shows the minimum spanning tree built using the example dataset in Table 1. The number on each edge represents its weight. For example, in X3 and X2, there are six individuals, {S2, S8, S10, S12, S15, S20}, having different genotypes.
+Fig. 1. The minimum spanning tree built on the SNPs in the example dataset shown in Table 1.
+
+
+
+For any individual, the genotype difference from Xi to Xj can be any one of the six combinations, i.e. 0→ 1 (indicating that the genotype in Xi is 0, and the genotype in Xj is 1), 1→ 0, 0→ 2, 2→ 0, 1→ 2 and 2→ 1. Using the example dataset in Table 1, Table 5 shows the genotype differences between the connected two SNPs in the minimum spanning tree in Figure 1. We use (XiXj){u→v}(u, v ∈ {0, 1, 2}) to represent the set of individuals whose genotype in Xi is u and genotype in Xj is v. For example, (X3X2){1→2}={S8, S10} and (X3X2){1→2}∪{0→2} = {S2, S8, S10}.
+Table 5. Genotype difference between the connected SNPs in the minimum spanning tree shown in Figure 1
+
+	0→1	1→0	0→2	2→0	1→2	2→1	
+(X3X2)	∅	∅	{S2}	{S12, S15, S20}	{S8, S10}	∅	
+(X2X5)	{S7}	{S13}	{S3}	{S1, S4, S6, S16, S23}	∅	{S8, S10}	
+(X5X6)	∅	∅	{S16}	{S9, S24}	{S7}	∅	
+(X6X1)	{S4}	{S8, S10}	{S5, S9, S12, S23}	{S2, S3, S11, S21}	∅	∅	
+(X6X4)	∅	∅	∅	{S16, S18}	{S10}	{S21}	
+
+
+
+5 INCREMENTALLY UPDATING OBSERVED FREQUENCY Od2
+In this section, we discuss how to update Od2 by utilizing the minimum spanning tree. For clarity, from now on, we use d2(XiXj, Yk) to denote the specific event d2 for the SNP pair (XiXj) and permutation Yk, i.e. the subsets of individuals satisfying (Xi = 1 ∧ Xj = 1 ∧ Yk=1). We use Od2(XiXj, Yk) to represent its observed frequency, i.e. Od2(XiXj, Yk)=|d2(XiXj, Yk)|. This notation also applies to other events in the contingency tables shown in Tables 2–4. For example, D(Xi, Yk) represents the subset of individuals satisfying (Xi = 1 ∧ Yk=1), and OD(Xi, Yk) = |D(Xi, Yk)|.
+
+Next, we show that for any SNP pair (XiXj) and an edge (XjXj′) ∈ E(𝒯), given Od2(XiXj, Yk), how to update the value for Od2(XiXj′, Yk). From the contingency tables in Table 2–4, it is easy to see that
+  
+and
+  
+The following theorem shows that, given Od2(XiXj, Yk) and D(Xi, Yk), using the genotype difference associated with edge (XjXj′), we can get the value of Od2(XiXj′, Yk).
+
+Theorem 5.1.
+For any SNP pair (XiXj) and an edge (XjXj′) ∈ E(𝒯), we have Od2(XiXj′, Yk) = Od2(XiXj, Yk)+|D(Xi, Yk)∩(XjXj′){0→1}∪{2→1}|− |D(Xi, Yk)∩(XjXj′){1→0}∪{1→2}|.
+
+Proof.
+See Appendix.
+
+Example 5.2.
+Using the example dataset in Table 1, let i=3, j=2, j′=5, and k=4, i.e. we consider SNP pair (X3X2), permutation Y4 and the edge (X2X5) in Figure 1. Suppose that we already know that Od2(X3X2, Y4)=2, and event D(X3, Y4)={S10, S13, S19}. From Table 5, we have (X2X5){0→1}∪{2→1}={S7, S8, S10}, and (X2X5){1→0}∪{1→2}={S13}. Thus according to Theorem 5.1, we have Od2(X3X5, Y4)=Od2(X3X2, Y4)+|{S10}|−|{S13}|=2. Note that by this way, we get the value of Od2(X3X5, Y4) from Od2(X3X2, Y4)without scanning all individuals.
+
+So far, we have discussed the procedure to update the value of Od2(XiXj′, Yk) from Od2(XiXj, Yk) for a specific phenotype permutation Yk. This procedure can be easily extended to handle all the permutations. From Theorem 5.1, for any permutation Yk, to update the value of Od2(XiXj′, Yk) from Od2(XiXj, Yk), we need the value of D(Xi, Yk) and the genotype difference associated with edge (XjXj′). Note that the genotype difference is fixed once the minimum spanning tree is built. Next, we discuss how to compute D(Xi, Yk) for all permutations {Y1, Y2,…, YK} in a batch mode in detail.
+
+Let DK(Xi) be a list of M entries, with each entry corresponding to an individual. For each individual Sm, we record in DK(Xi)[m] the set of phenotypes satisfying (Xi = 1 ∧ Yk=1). For example, consider the dataset in Table 1, we have that DK(X3)[8]={Y2, Y3}. Table 4 shows the entries of DK(X3). Only non-empty entries, i.e. DK(Xi)[m]≠∅, are shown in the table. It is easy to see that, for any Xi and Yk, we can get D(Xi, Yk) from DK(Xi) as follows: D(Xi, Yk) is the set of individuals whose corresponding entries in DK(Xi) contain Yk as an element, i.e.
+ (1)  
+For example, using the example dataset in Table 1, from Table 6, we know that D(X3, Y4)={S10, S13, S19}.
+Table 6. Entries of DK(X3) with empty entries omitted for all permutations in a batch mode
+
+Individual id.	Phenotype permutations	
+S8	{Y2, Y3}	
+S10	{Y2, Y3, Y4, Y5}	
+S13	{Y1, Y2, Y4, Y5}	
+S19	{Y3, Y4}	
+
+
+
+For SNP pair (XiXj), let Od2(XiXj)=[Od2(XiXj, Y1), Od2(XiXj, Y2),…, Od2(XiXj, YK)]. From Theorem 5.1 and Equation (1), for any SNP pair (XiXj) and an edge (XjXj′)∈E(𝒯), we can get Od2(XiXj′) from Od2(XiXj) using DK(Xi) and the genotype difference information associated with edge (XjXj′). First, initialize Od2(XiXj′)=Od2(XiXj). Next, for every m (1≤m≤M), if Yk ∈ DK(Xi)[m], we update Od2(XiXj′) as follows:
+  
+
+Example 5.3.
+Following Example 5.2, we consider the two SNP pairs (X3X2) and (X3X5), with (X2X5) being an edge of the tree in Figure 1. Assume that DK(X3) is as shown in Table 6, and Od2(X3X2)=[1, 1, 1, 2, 1]. From Table 5, the genotype difference on edge (X2X5) is (X2X5){0→1}∪{2→1}={S7, S8, S10}, and (X2X5){1→0}∪{1→2}={S13}. For individual Sm ∈ {S7, S8, S10} (Sm ∈ {S13}), we need to increase (decrease) the corresponding values in Od2(X3X2) according to DK(X3). Table 7 shows the updating process for Od2(X3X5). Initially, Od2(X3X5)=Od2(X3X2). For individual S7, since its corresponding entry in DK(X3), DK(X3)[7]=∅, Od2(X3X5) remains unchanged. For individual S8, DK(X3)[8]={Y2, Y3}, we increase the values of Od2(X3X5, Y2) and Od2(X3X5, Y3) by 1. Similarly, we increase and decrease the values in Od2(X3X5) according to DK(X3) for S10 and S13. For individual S19, we do not have any update because S19 ∉ {S7, S8, S10} and S19 ∉ {S13}. The final result is Od2(X3X5)=[0, 2, 3, 2, 1].
+Table 7. Updating Od2(X3X5) from Od2(X3X2) for all permutations in a batch mode
+
+	Y1	Y2	Y3	Y4	Y5	
+Od2(X3X5) after initializing	1	1	1	2	1	
+Od2(X3X5) after updating for S7	1	1	1	2	1	
+Od2(X3X5) after updating for S8	1	2	2	2	1	
+Od2(X3X5) after updating for S10	1	3	3	3	2	
+Od2(X3X5) after updating for S13	0	2	3	2	1	
+
+
+
+Note that to get the value of Od2(XiXj), using a brute force approach, we need to scan a (2+K) × M matrix consisting of the genotype of (XiXj) and permutations {Y1, Y2,…, YK} for the M individuals. In the previous example, to compute the value of Od2(X3X5), the cost of the brute force approach is (3+5) × 24=192. Using our approach, the total number of updates is |DK(X3)[8]|+|DK(X3)[10]|+|DK(X3)[13]|=10, which is significantly less than the cost of the brute force approach. More formally, given DK(Xi), the time complexity of updating Od2(XiXj′) from Od2(XiXj) is O(w(XjXj′)K).
+
+The procedure of updating Od2(XiXj′) from Od2(XiXj) can also be applied to update the remaining free variables Od3(XiXj), Of2(XiXj) and Of3(XiXj). Note that, to update Of2(XiXj), Of3(XiXj), we will need FK(Xi), which can be defined in a similar way to that of DK(Xi): for each individual Sm, we record in FK(Xi)[m] the set of phenotypes satisfying (Xi = 2 ∧ Yk=1).
+
+6 THE TEAM ALGORITHM
+TEAM examines SNP pairs through a double loop, where the outer loop visits a leaf node at a time, and the inner loop traverse the rest of the tree, starting from the parent node of the leaf. Let Od2d3f2f3(XiXj)=[Od2(XiXj), Od3(XiXj), Of2(XiXj), Of3(XiXj)]. Let L(𝒯) ∈ V(𝒯) be the set of leaf nodes of the minimum spanning tree 𝒯. For any leaf node Xi ∈ L(𝒯), let AP(Xi) = {(XiXj)|i≠j, Xj ∈ V(𝒯)}. Let Xa be the parent node of Xi. Since all SNPs are connected in 𝒯, once we have Od2d3f2f3(XiXa), we can update all Od2(XiXj) ∈ AP(Xi) by enumerating the edges in E(𝒯) in a breath-first traversal starting from Xa.
+
+Example 6.1.
+Consider the tree in Figure 1. Let Xi = X3 and Xa = X2. We have AP(X3) = {(X3X2), (X3X5), (X3X6), (X3X1), (X3X4)}. Starting from X3, a breadth-first search will enumerate edges {(X2X5), (X5X6), (X6X1), (X6X4)}, which can be utilized to update Od2d3f2f3(XiXj) for the SNP pairs in AP(X3).
+
+Once the SNP pairs in AP(Xi) have been processed, we delete Xi from L(𝒯), and repeat the same process for another leaf node. The overall algorithm is summarized in Algorithm 1. Given the SNPs X′ = {X1, X2,…, XN}, phenotype permutations Y′ = {Y1, Y2,…, YK}, we first enumerate and store all single-locus contingency tables. We then build the minimum spanning tree 𝒯, with genotype difference associated with each edge. For leaf node Xi, we compute DK(Xi), FK(Xi) and Od2d3f2f3(XiXa). This information is then used to incrementally update Od2d3f2f3 (XiXj′) for all SNP pairs in AP(Xi). After processing AP(Xi), we delete Xi from 𝒯 and repeat the procedure for the remaining leaf nodes.
+
+
+
+Time complexity: the time complexity on generating all single-locus contingency tables and building the minimum spanning tree is O(MNK) and O(MN2), respectively. The time complexity to compute DK(Xi) and FK(Xi) for all SNPs is O(MNK). The total updating cost for all AP(Xi) is O(W𝒯NK). Thus, the overall time complexity of TEAM is O(MNK+MN2+W𝒯NK). Note that the complexity of the brute force approach is O(MN2K). The number of SNPs N is the dominant factor.
+
+Space complexity: the dataset size is O(M(N+K)). The space needed to store all single-locus contingency tables is O(NK). The size of tree 𝒯 is O(W𝒯). The size of DK(Xi) and FK(Xi) is O(MK). Thus, the total space complexity of TEAM is O(M(N + K)+K(N+M)+W𝒯).
+
+Note that we can do incremental computation using any exploration order. TEAM utilizes minimum spanning tree to update the contingency tables. The reason is that the cost of such update depends on the difference between the SNPs. The more similar they are, the lower the cost. Since minimum spanning tree has the minimum weight W𝒯 over all spanning trees, using it to guide the computation leads to optimal efficiency. It is not absolutely necessary to use a minimum spanning tree. As long as the tree is close to a minimum spanning tree, we should expect good performance. An implementation issue in building the minimum spanning tree is that we need O(N2) space to store all pairwise differences between the SNPs. In practise, we divide the SNPs into sub groups of equal size. A minimum spanning tree is built for each group. Then the sub trees are merged to a larger tree by randomly connecting leave nodes. The tree built in this way is an approximate minimum spanning tree. Our focus in this article is not to build an optimal minimum spanning tree, but to use the tree structure for efficient updating. Refer to Eisner (1997) and Graham and Hell (1985) for surveys on minimum spanning tree construction. In the experiments, we show the performance evaluation using different spanning trees.
+
+7 EXPERIMENTAL RESULTS
+In this section, we present extensive experimental results on the performance of the TEAM algorithm. TEAM is implemented in C++. We first evaluate the efficiency of TEAM. Then, we present the findings of epistasis detection in simulated human genome-wide study.
+
+7.1 Efficiency evaluation
+We use both simulated human and real mouse for the efficiency evaluation experiments. The experiments are performed on a 2.6 GHz PC with 8G memory running Linux system.
+
+7.1.1 Human data
+The human datasets are generated by the simulator Hapsample (Wright et al., 2007), which is publicly accessible from the web site http://www.hapsample.org. We evaluate the performance of TEAM by comparing it with the brute force approach since there is no previous algorithm readily applicable to human datasets. Note that the brute force approach is very time consuming, we use a moderate number of SNPs and permutations in the experiments so that the brute force approach can finish in a reasonable amount of time. Unless otherwise specified, the default experimental setting is the following: #individuals = 400, #SNPs = 10 000, #permutations = 100, and the case/control ratio is 1. These experimental settings are chosen to demonstrate the efficiency gain offered by TEAM over the brute force implementation. TEAM can handle much larger datasets. The performance of TEAM is expected to follow the same trends presented in this section.
+
+TEAM contains three major components: building the minimum spanning tree, updating the contingency tables, and calculating the actual test values. Note that TEAM can be applied to any statistics defined on the contingency table. With different statistics, the only difference in runtime would be caused by the last component calculating the statistics. In the experiments, we choose chi-square test as our statistic. Figure 2 shows the running time comparison of TEAM and the brute force approach using different experimental settings. The y-axis is in logarithm scale. In these figures, we also show the detailed runtime of these three components.
+Fig. 2. Comparison between TEAM and the brute force approach on human datasets under various experimental settings: varying the number of SNPs (a), individuals (b), permutations (c) and varying the case/control ratio (d).
+
+
+
+Table 8 shows the percentage of individuals pruned by TEAM under different experimental settings. Since in theory we can update the contingency tables in any exploration order, in the table, we also show the pruning effect of using a random spanning tree and a linear spanning tree to guide the updating process. The random spanning tree is generated by starting from a randomly picked SNP and growing edges that connect the remaining SNPs in a random order. The linear tree is a single path connecting all SNPs sequentially. From the table, we can see that TEAM prunes more effectively than the other two updating methods. In the table, we also show the ratio of the tree weights and the size of the SNP dataset, i.e. W𝒯/(M × N), which is a determining factor of the pruning ratio. Note that varying the number of permutations and the case/control ratio does not effect the tree being built.
+Table 8. The tree weight and the proportion of the individuals pruned by TEAM on the human datasets
+
+	Settings	TEAM	Updating by Random Tree	Updating by Linear Tree	
+		Tree weight (%)	Pruning ratio (%)	Tree weight (%)	Pruning ratio (%)	Tree weight (%)	Pruning ratio (%)	
+No. of SNPs	10 K	17.721	94.104	53.326	88.722	53.158	89.210	
+	20 K	18.692	93.981	52.881	88.895	52.851	89.390	
+	30 K	19.314	93.802	53.011	88.823	52.946	89.380	
+	
+No. of Individuals	200	16.641	94.376	53.358	88.749	53.179	89.205	
+	300	17.342	94.209	53.343	88.730	53.142	89.213	
+	400	17.721	94.104	53.326	88.722	53.158	89.210	
+	
+No. of Permutations	100	17.721	94.104	53.326	88.722	53.158	89.210	
+	300	17.721	94.105	53.326	88.724	53.158	89.212	
+	500	17.721	94.104	53.326	88.724	53.158	89.212	
+	
+Case/control ratio	100/300	17.721	97.049	53.326	94.355	53.158	94.599	
+	200/200	17.721	94.104	53.326	88.722	53.158	89.210	
+	300/100	17.721	97.049	53.326	94.355	53.158	94.599	
+
+
+
+Figures 2a depicts the runtime comparison when varying the number of SNPs. TEAM is more than an order of magnitude faster than the brute force approach. Among the three components of TEAM, the procedures on building the minimum spanning tree and calculating test values only take a small portion of the total runtime of TEAM. The runtime of TEAM is dominated by the cost of updating the contingency tables. As will be shown later, TEAM prunes most of the individuals when updating the contingency tables. In Figures 2b–d, we can also observe a similar one to two orders of magnitude speed up of TEAM over the brute force approach when varying the number of individuals, the number of permutations and the case/control ratio.
+
+7.1.2 Mouse data
+The mouse datasets is extracted from a set of combined SNPs from the 10 K GNF (http://www.gnf.org/) mouse dataset and the 140 K Broad/MIT mouse dataset (Wade and Daly, 2005). This merged dataset has 1 56 525 SNPs for 71 mouse strains. The missing values in the dataset are imputed using NPUTE (Roberts et al., 2007). We compare TEAM and the recently proposed COE algorithm (Zhang et al., 2009a), which is specifically designed for association study in mouse datasets. The default experimental setting is as follows: #individuals = 70, #SNPs = 10 000, #permutations = 100, and the case/control ratio is 1.
+
+Figure 3 shows the comparison results. In the figure, we also plot the runtime of the brute force approach. Figure 3a shows the runtime of the three approaches when varying the number of SNPs. It is clear that both TEAM and COE are orders of magnitude faster than the brute force approach. TEAM is about twice faster than COE. Figure 3b shows the runtime comparison when varying the number of individuals. From the figure, COE is more suitable for datasets having small number of individual. As the number of individuals increases, the TEAM algorithm becomes more efficient than COE. Note that in human study, the number of individuals usually ranges up to thousands, much larger than that in typical mouse datasets.
+Fig. 3. Comparison between TEAM, COE and the brute force approach on mouse datasets under various experimental settings: (a) varying the number of SNPs and (b) varying the number of individuals.
+
+
+
+7.2 Epistasis detection in simulated human GWAS
+In this section, we report the results of epistasis detection using simulated human GWAS data generated by Hapsample. In total, we generate four datasets, each of which has 112 036 SNPs for 250 cases and 250 controls. In each dataset, a disease causal interacting SNP pair is embedded. The embedded SNP pairs are: (rs768529, rs3804940) in dataset 1, (rs10495728, rs521882) in dataset 2, (rs1016836, rs2783130) in dataset 3 and (rs648519, rs1012273) in dataset 4. We use standard chi-square test with 500 permutations. Similar results can be found by using likelihood ratio test.
+
+With an overall FDR threshold of 0.005, Table 9 shows the identified significant SNP pairs using TEAM. TEAM successfully identified the embedded SNP pairs in all simulated datasets. The embedded SNP pairs are labelled with stars ‘*’. The table shows the SNP loci on the genome. For example, in dataset 1, we embed SNP pair rs768529 and rs3804940, which are located on chromosome 1 at position 51 946 762 bp and chromosome 3 at 7 520 545 bp, respectively. The FWER for each reported SNP pair is also shown. Note that, for a SNP pair, an FDR (or FWER) value of 0 indicates that permutation tests do not generate any test value larger than value of the reported SNP pair. In dataset 1, except for the embedded SNP pair (rs768529, rs3804940), five other SNP pairs are also reported. One of the embedded SNP, rs768529, is involved in all the five pairs. A closer look at the other SNPs in the reported SNP pairs shows that they are all adjacent to the embedded SNP rs3804940. The normalized linkage disequilibrium (Lewontin and Kojima, 1960) between rs3804940 and the other five SNPs are D′(rs3804940, rs756084)=1, D′(rs3804940, rs779742)= 0.477, D′(rs3804940, rs1872393)= 0.442, D′(rs3804940, rs779744)= 0.442 and D′(rs3804940, rs6764561)= 0.454, indicating there is strong linkage disequilibrium between them.
+Table 9. Identified significant SNP pairs in the simulated human GWAS datasets
+
+Dataset	Significant SNP-pair	Chromosome and location	FDR	FWER	
+1	(rs768529, rs3804940)*	(chr1: 51946762, chr3: 7520545)	0.00067	0	
+	(rs768529, rs756084)	(chr1: 51946762, chr3: 7536149)	0.00067	0	
+	(rs768529, rs779742)	(chr1: 51946762, chr3: 7558058)	0.00067	0	
+	(rs768529, rs1872393)	(chr1: 51946762, chr3: 7546236)	0.00067	0.004	
+	(rs768529, rs779744)	(chr1: 51946762, chr3: 7555121)	0.00067	0.004	
+	(rs768529, rs6764561)	(chr1: 51946762, chr3: 7514592)	0.00067	0.004	
+	
+2	(rs10495728, rs521882)*	(chr2: 22811773, chr8: 16688797)	0.004	0.004	
+	
+3	(rs1016836, rs2783130)*	(chr10: 31935845, chr13: 79068161)	0	0	
+	
+4	(rs648519, rs1012273)*	(chr11: 98972936, chr16: 58525067)	0.002	0.002	
+
+
+
+8 CONCLUSION AND FUTURE WORK
+The large number of SNPs genotyped in the genome-wide scale poses great computational challenges in two-locus epistasis detection. The permutation test used for proper error rate controlling makes the problem computationally even more intensive. In this article, we propose an efficient algorithm, TEAM, for epistasis detection human GWAS. TEAM has the same strength as the recently developed epistasis detection methods, i.e. it guarantees to find the optimal solution. Compared with existing methods, TEAM is more efficient in large sample study, and offers broader applicability. Existing methods designed for homozygous SNPs cannot be used for human data where most SNPs are heterozygous. TEAM, on the other hand, can handle both homozygous and heterozygous SNPs. Since it exhaustively enumerate all SNP pairs, TEAM can be used to control the FWER and FDR, both of which are widely used in controlling error in GWAS; while previous methods only control the FWER. Existing methods need to exam the formulation of the statistic. TEAM is focused on efficiently updating contingency tables rather than any specific statistic. It can, therefore, be used for any statistical test based on contingency table regardless of its formulation.
+
+In this artcile, we focus on the disease phenotypes that can be represented as binary variables. Many association studies involve phenotypes measured as continuous variables. We will investigate how to apply the idea of the current algorithm to quantitative phenotypes in the future study.
+
+Funding: National Science Foundation (awards IIS0448392, IIS0812464, partially).
+
+Conflict of Interest: none declared.
+
+
+APPENDIX
+Proof of Theorem 3.1
+
+Proof.
+From the four contingency tables shown in Tables 2–4, it is easy to get the following linear equation system:
+  
+The rank of the above linear system is 14. We thus take 14 rows {4, 6, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21}, which form a full rank matrix. The row reduced echelon form of this non-redundant linear system is
+  
+Thus, we have the following solution:
+  
+Clearly, only four variables {Od2, Od3, Of2, Of3} are free. Once the values of these free variables are known, the observed frequencies of remaining events in the two-locus contingency table are also known.
+
+Proof of Theorem 5.1
+
+Proof.
+It suffices to show that
+  
+This is the same as to show that
+  
+This is clearly true, hence completes the proof.
+==== Refs
+REFERENCES
+Balding DJ   A tutorial on statistical methods for population association studies Nat. Rev. Genet. 2006 7 781 791 16983374 
+Carlborg O    The use of a genetic algorithm for simultaneous mapping of multiple interacting quantitative trait loci Genetics 2000 155 2003 2010 10924492 
+Churchill GA  Doerge RW   Empirical threshold values for quantitative trait mapping Genetics 1994 138 963 971 7851788 
+Cormen TH    Introduction to Algorithms. 2001 MIT Press and McGraw-Hill 
+Dudoit S  Laan MJ   Multiple Testing Procedures with Applications to Genomics. 2008 Springer 
+Eisner J   State-of-the-art algorithms for minimum spanning trees: a tutorial discussion. 1997 Manuscript,University of Pennsylvania 
+Evans DM    Two-stage two-locus models in genome-wide association PLoS Genet. 2006 2 e157 17002500 
+Graham RL  Hell P   On the history of the minimum spanning tree problem Ann. History Comput. 1985 7 43 57 
+Hirschhorn JN  Daly MJ   Genome-wide association studies for common diseases and complex traits Nat. Rev. Genet. 2005 6 95 108 15716906 
+Hoh J  Ott J   Mathematical multi-locus approaches to localizing complex human trait genes Nat. Rev. Genet. 2003 4 701 709 12951571 
+Hoh J    Selecting snps in two-stage analysis of disease association data: a model-free approach Ann. Hum. Genet. 2000 64 413 417 11281279 
+Lewontin RC  Kojima K   The evolutionary dynamics of complex polymorphisms Evolution 1960 14 458 472 
+Miller RG   Simultaneous Statistical Inference. 1981 New York Springer 
+Musani SK    Detection of gene x gene interactions in genome-wide association studies of human population data Hum. Hered. 2007 63 67 84 17283436 
+Nelson MR    A combinatorial partitioning method to identify multilocus genotypic partitions that predict quantitative trait variation Genome Res. 2001 11 458 470 11230170 
+Ritchie MD    Multifactor-dimensionality reduction reveals high-order interactions among estrogen-metabolism genes in sporadic breast cancer Am. J. Hum. Genet. 2001 69 138 147 11404819 
+Roberts A    Inferring missing genotypes in large snp panels using fast nearest-neighbor searches over sliding windows Proceeding of ISMB. 2007 
+Saxena R    Genome-wide association analysis identifies loci for type 2 diabetes and triglyceride levels Science 2007 316 1331 1336 17463246 
+Scuteri A    Genome-wide association scan shows genetic variants in the fto gene are associated with obesity-related traits PLoS Genet. 2007 3 1200 1210 
+The Wellcome Trust Case Control Consortium Genome-wide association study of 14,000 cases of seven common diseases and 3,000 shared controls Nature 2007 447 661 678 17554300 
+Wade CM  Daly MJ   Genetic variation in laboratory mice Nat. Genet. 2005 37 1175 1180 16254563 
+Weedon M    A common variant of hmga2 is associated with adult and childhood height in the general population Nat. Genet. 2007 39 1245 1250 17767157 
+Westfall PH  Young SS   Resampling-based Multiple Testing. 1993 New York Wiley 
+Wright FA    Simulating association studies: a data-based resampling method for candidate regions or whole genome scans Bioinformatics 2007 23 2581 2588 17785348 
+Yang C    SNPHarvester: a filtering-based approach for detecting epistatic interactions in genomewide association studies Bioinformatics 2009 25 504 511 19098029 
+Zhang X    FastANOVA: an efficient algorithm for genome-wide association study Proceeding of KDD. 2008 
+Zhang X    COE: a general approach for efficient genome-wide two-locus epistatic test in disease association study Proceeding of RECOMB. 2009a 
+Zhang X    FastChi: an efficient algorithm for analyzing gene-gene interactions Proceeding of PSB. 2009b
